@@ -306,7 +306,7 @@ int main()
 	printf("finised loading hashes.\n");
 
 	MSG msg = { 0 };
-	uint32_t treebefore = 0;
+	uintptr_t treebefore = 0;
 	char szFile[260] = { 0 };
 	PacketBin* packet = NULL;
 	ShowWindow(window, TRUE);
@@ -314,6 +314,7 @@ int main()
 	HDC gldc = GetDC(window);
 	float Deltatime = 0, Lastedtime = 0;
 	char* tmp = (char*)calloc(1, 64);
+	myassert(tmp == NULL);
 	while (active)
 	{
 		if (PeekMessageA(&msg, NULL, 0U, 0U, PM_REMOVE))
@@ -363,11 +364,12 @@ int main()
 					if (packet != NULL)
 						cleanbin(packet->entriesMap);
 					packet = decode(szFile, hasht);
+					myassert(packet == NULL);
 					ImGui::GetStateStorage()->Clear();
 					getstructidbin(packet->entriesMap, &treebefore);
 				}
 			}
-			if (szFile[0] != 0)
+			if (szFile[0] != 0 && packet != NULL)
 			{
 				if (ImGui::MenuItem("Save Bin"))
 				{
@@ -391,7 +393,7 @@ int main()
 			}
 			ImGui::EndMenuBar();
 		}
-		if (szFile[0] != 0)
+		if (szFile[0] != 0 && packet != NULL)
 		{
 			ImGui::AlignTextToFramePadding();
 			bool treeope = ImGui::TreeNodeEx((void*)0, ImGuiTreeNodeFlags_SpanFullWidth, "");
@@ -420,7 +422,7 @@ int main()
 	wglDeleteContext(gl33_context);
 	ReleaseDC(window, gldc);
 	DestroyWindow(window);
-	UnregisterClassA("WGL_fdjhsklf", window_class.hInstance);
+	UnregisterClassA("binreadergui", window_class.hInstance);
 
 	return (int)msg.wParam;
 }

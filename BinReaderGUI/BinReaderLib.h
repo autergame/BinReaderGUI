@@ -7,6 +7,14 @@
 #include <stdlib.h>
 #include <ctype.h>
 
+void _assert(char const* msg, char const* file, unsigned line)
+{
+    printf("ERROR: %s %s %d\n", msg, file, line);
+    scanf("press enter to exit.");
+    exit(1);
+}
+#define myassert(expression) if (expression) { _assert(#expression, __FILE__, __LINE__); }
+
 uint32_t FNV1Hash(char* str)
 {
     uint32_t Hash = 0x811c9dc5;
@@ -23,19 +31,19 @@ uint64_t PRIME5 = 0x27D4EB2F165667C5ULL;
 uint64_t xxread8(const void* memPtr)
 {
     uint8_t val;
-    memcpy(&val, memPtr, 1);
+    myassert(memcpy(&val, memPtr, 1) == NULL);
     return val;
 }
 uint64_t xxread32(const void* memPtr)
 {
     uint32_t val;
-    memcpy(&val, memPtr, 4);
+    myassert(memcpy(&val, memPtr, 4) == NULL);
     return val;
 }
 uint64_t xxread64(const void* memPtr)
 {
     uint64_t val;
-    memcpy(&val, memPtr, 8);
+    myassert(memcpy(&val, memPtr, 8) == NULL);
     return val;
 }
 uint64_t XXH_rotl64(uint64_t x, int r)
@@ -143,29 +151,32 @@ struct node
 {
     uint32_t key;
     char* value;
-    struct node* next;
+    node* next;
 };
 
 typedef struct HashTable
 {
     uint32_t size;
-    struct node** list;
+    node** list;
 } HashTable;
 
 HashTable* createHashTable(uint32_t size)
 {
     HashTable* t = (HashTable*)malloc(sizeof(HashTable));
+    myassert(t == NULL);
     t->size = size;
-    t->list = (struct node**)calloc(size, sizeof(struct node**));
+    t->list = (node**)calloc(size, sizeof(node**));
+    myassert(t->list == NULL);
     return t;
 }
 
 void insertHashTable(HashTable* t, uint32_t key, char* val)
 {
     uint32_t pos = key % t->size;
-    struct node* list = t->list[pos];
-    struct node* newNode = (struct node*)malloc(sizeof(struct node));
-    struct node* temp = list;
+    node* list = t->list[pos];
+    node* newNode = (node*)malloc(sizeof(node));
+    myassert(newNode == NULL);
+    node* temp = list;
     while (temp) {
         if (temp->key == key) {
             temp->value = val;
@@ -181,8 +192,8 @@ void insertHashTable(HashTable* t, uint32_t key, char* val)
 
 char* lookupHashTable(HashTable* t, uint32_t key)
 {
-    struct node* list = t->list[key % t->size];
-    struct node* temp = list;
+    node* list = t->list[key % t->size];
+    node* temp = list;
     while (temp) {
         if (temp->key == key) {
             return temp->value;
@@ -198,14 +209,14 @@ int addhash(HashTable* map, const char* filename)
     if (!file)
     {
         printf("ERROR: cannot read file \"%s\".\n", filename);
-        scanf("press enter to exit.");
         return 1;
     }
     fseek(file, 0, SEEK_END);
     long fsize = ftell(file);
     fseek(file, 0, SEEK_SET);
     char* fp = (char*)malloc(fsize + 1);
-    fread(fp, fsize, 1, file);
+    myassert(fp == NULL);
+    myassert(fread(fp, fsize, 1, file) == NULL);
     fp[fsize] = '\0';
     fclose(file);
     char* hashend;
@@ -227,8 +238,9 @@ typedef struct charv
 void memfwrite(void* buf, size_t bytes, charv* membuf)
 {
     char* oblock = (char*)realloc(membuf->data, membuf->lenght + bytes);
+    myassert(oblock == NULL);
     oblock += membuf->lenght;
-    memcpy(oblock, buf, bytes);
+    myassert(memcpy(oblock, buf, bytes) == NULL);
     membuf->data = oblock;
     membuf->data -= membuf->lenght;
     membuf->lenght += bytes;
@@ -236,7 +248,7 @@ void memfwrite(void* buf, size_t bytes, charv* membuf)
 
 void memfread(void* buf, size_t bytes, char** membuf)
 {
-    memcpy(buf, *membuf, bytes);
+    myassert(memcpy(buf, *membuf, bytes) == NULL);
     *membuf += bytes;
 }
 
@@ -276,7 +288,7 @@ uint8_t typetouint(Type type)
 
 typedef struct BinField
 {
-    uint32_t id;
+    uintptr_t id;
     Type typebin;
     void* data;
 } BinField;
@@ -327,7 +339,8 @@ char* hashtostr(HashTable* hasht, uint32_t value)
     char* strvalue = lookupHashTable(hasht, value);
     if (strvalue == NULL)
     {
-        strvalue = (char*)calloc(10, 1);
+        strvalue = (char*)calloc(11, 1);
+        myassert(strvalue == NULL);
         sprintf(strvalue, "0x%08" PRIX32, value);
     }
     return strvalue;
@@ -337,7 +350,7 @@ uint32_t hashfromstring(char* string)
 {
     uint32_t hash = 0;
     if (string[0] == '0' && string[1] == 'x')
-        sscanf(string, "0x%08" PRIX32, &hash);
+        hash = strtoul(string, NULL, 16);
     else
         hash = FNV1Hash(string);
     return hash;
@@ -347,12 +360,11 @@ uint64_t hashfromstringxx(char* string)
 {
     uint64_t hash = 0;
     if (string[0] == '0' && string[1] == 'x')
-        sscanf(string, "0x%016" PRIX64, &hash);
+        hash = strtoull(string, NULL, 16);
     else
         hash = XXHash((const uint8_t*)string, strlen(string));
     return hash;
 }
-
 
 static int MyResizeCallback(ImGuiInputTextCallbackData* data)
 {
@@ -360,22 +372,25 @@ static int MyResizeCallback(ImGuiInputTextCallbackData* data)
     {
         char** string = (char**)data->UserData;
         char* newdata = (char*)calloc(1, data->BufSize);
-        memcpy(newdata, *string, strlen(*string));
+        myassert(newdata == NULL);
+        myassert(memcpy(newdata, *string, strlen(*string)) == NULL);
         free(*string); *string = newdata;
         data->Buf = *string;
     }
     return 0;
 }
 
-char* inputtext(char* inner, uint32_t id)
+char* inputtext(const char* inner, uintptr_t id)
 {
     ImGui::PushID((void*)id);
     size_t size = strlen(inner) + 1;
     char* string = (char*)calloc(size, 1);
-    memcpy(string, inner, size);
-    char** prot = (char**)calloc(1, sizeof(char*)); *prot = string;
+    myassert(string == NULL);
+    myassert(memcpy(string, inner, size) == NULL);
+    char** prot = (char**)calloc(1, sizeof(char*)); 
+    myassert(prot == NULL); *prot = string;
     ImGui::SetNextItemWidth(ImGui::CalcTextSize(string, NULL, true).x + GImGui->Style.FramePadding.x * 8.f);
-    bool ret = ImGui::InputTextEx("", NULL, string, size, ImVec2(), ImGuiInputTextFlags_CallbackResize, MyResizeCallback, (void*)prot);
+    bool ret = ImGui::InputText("", string, size, ImGuiInputTextFlags_CallbackResize, MyResizeCallback, (void*)prot);
     ImGui::PopID();
     if(ret)
         if (ImGui::IsKeyPressedMap(ImGuiKey_Enter) || GImGui->IO.MouseClicked[0])
@@ -385,7 +400,7 @@ char* inputtext(char* inner, uint32_t id)
     return NULL;
 }
 
-void inputtextmod(HashTable* hasht, uint32_t* hash, uint32_t id)
+void inputtextmod(HashTable* hasht, uint32_t* hash, uintptr_t id)
 {
     char* string = inputtext(hashtostr(hasht, *hash), id);
     if (string != NULL)
@@ -499,7 +514,7 @@ void cleanbin(BinField* value)
     free(value);
 }
 
-void getstructidbin(BinField* value, uint32_t* tree)
+void getstructidbin(BinField* value, uintptr_t* tree)
 {
     *tree += 1;
     value->id = *tree;
@@ -571,7 +586,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
         case FLAG:
         case BOOLB:
         {
-            char* string = inputtext(_strdup(*(uint8_t*)value->data == 1 ? "true" : "false"), value->id);
+            char* string = inputtext(*(uint8_t*)value->data == 1 ? "true" : "false", value->id);
             if (string != NULL)
             {
                 for (int i = 0; string[i]; i++)
@@ -587,6 +602,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
         case SInt8:
         {
             char* buf = (char*)calloc(64, 1);
+            myassert(buf == NULL);
             sprintf(buf, "%" PRIi8, *(int8_t*)value->data);
             char* string = inputtext(buf, value->id);
             if (string != NULL)
@@ -598,6 +614,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
         case UInt8:
         {
             char* buf = (char*)calloc(64, 1);
+            myassert(buf == NULL);
             sprintf(buf, "%" PRIu8, *(uint8_t*)value->data);
             char* string = inputtext(buf, value->id);
             if (string != NULL)
@@ -609,6 +626,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
         case SInt16:
         {
             char* buf = (char*)calloc(64, 1);
+            myassert(buf == NULL);
             sprintf(buf, "%" PRIi16, *(int16_t*)value->data);
             char* string = inputtext(buf, value->id);
             if (string != NULL)
@@ -620,6 +638,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
         case UInt16:
         {
             char* buf = (char*)calloc(64, 1);
+            myassert(buf == NULL);
             sprintf(buf, "%" PRIu16, *(uint16_t*)value->data);
             char* string = inputtext(buf, value->id);
             if (string != NULL)
@@ -631,6 +650,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
         case SInt32:
         {
             char* buf = (char*)calloc(64, 1);
+            myassert(buf == NULL);
             sprintf(buf, "%" PRIi32, *(int32_t*)value->data);
             char* string = inputtext(buf, value->id);
             if (string != NULL)
@@ -642,6 +662,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
         case UInt32:
         {
             char* buf = (char*)calloc(64, 1);
+            myassert(buf == NULL);
             sprintf(buf, "%" PRIu32, *(uint32_t*)value->data);
             char* string = inputtext(buf, value->id);
             if (string != NULL)
@@ -653,6 +674,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
         case SInt64:
         {
             char* buf = (char*)calloc(64, 1);
+            myassert(buf == NULL);
             sprintf(buf, "%" PRIi64, *(int64_t*)value->data);
             char* string = inputtext(buf, value->id);
             if (string != NULL)
@@ -664,6 +686,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
         case UInt64:
         {
             char* buf = (char*)calloc(64, 1);
+            myassert(buf == NULL);
             sprintf(buf, "%" PRIu64, *(uint64_t*)value->data);
             char* string = inputtext(buf, value->id);
             if (string != NULL)
@@ -676,6 +699,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
         {
             uint8_t havepoint = 0;
             char* buf = (char*)calloc(64, 1);
+            myassert(buf == NULL);
             int length = sprintf(buf, "%.9g", *(float*)value->data);
             for (int i = 0; i < length; i++)
                 if (buf[i] == '.')
@@ -697,6 +721,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
                 ImGui::SameLine();
                 uint8_t havepoint = 0;
                 char* buf = (char*)calloc(64, 1);
+                myassert(buf == NULL);
                 int length = sprintf(buf, "%.9g", arr[i]);
                 for (int k = 0; k < length; k++)
                     if (buf[k] == '.')
@@ -719,6 +744,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
                 ImGui::SameLine();
                 uint8_t havepoint = 0;
                 char* buf = (char*)calloc(64, 1);
+                myassert(buf == NULL);
                 int length = sprintf(buf, "%.9g", arr[i]);
                 for (int k = 0; k < length; k++)
                     if (buf[k] == '.')
@@ -741,6 +767,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
                 ImGui::SameLine();
                 uint8_t havepoint = 0;
                 char* buf = (char*)calloc(64, 1);
+                myassert(buf == NULL);
                 int length = sprintf(buf, "%.9g", arr[i]);
                 for (int k = 0; k < length; k++)
                     if (buf[k] == '.')
@@ -763,6 +790,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
                 ImGui::SameLine();
                 uint8_t havepoint = 0;
                 char* buf = (char*)calloc(64, 1);
+                myassert(buf == NULL);
                 int length = sprintf(buf, "%.9g", arr[i]);
                 for (int k = 0; k < length; k++)
                     if (buf[k] == '.')
@@ -784,6 +812,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
             {
                 ImGui::SameLine();
                 char* buf = (char*)calloc(64, 1);
+                myassert(buf == NULL);
                 sprintf(buf, "%" PRIu8, arr[i]);
                 char* string = inputtext(buf, value->id+i);
                 if (string != NULL)
@@ -818,6 +847,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
         case WADENTRYLINK:
         {
             char* strvalue = (char*)calloc(10, 1);
+            myassert(strvalue == NULL);
             sprintf(strvalue, "0x%016" PRIX64, *(uint64_t*)value->data);
             char* string = inputtext(strvalue, value->id);
             if (string != NULL)
@@ -864,8 +894,8 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
                         {
                             ImGui::Indent();
                             getvaluefromtype(pe->items[i]->value, hasht);
-                            ImGui::Unindent();
                             ImGui::TreePop();
+                            ImGui::Unindent();
                         }
                     }
                     else
@@ -905,6 +935,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
 BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
 {
     BinField* result = (BinField*)calloc(1, sizeof(BinField));
+    myassert(result == NULL);
     result->typebin = uinttotype(typeidbin);
     switch (result->typebin)
     {
@@ -914,6 +945,7 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
         case UInt8:
         {
             uint8_t* data = (uint8_t*)calloc(1, 1);
+            myassert(data == NULL);
             memfread(data, 1, fp);
             result->data = data;
             break;
@@ -922,6 +954,7 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
         case UInt16:
         {
             uint16_t* data = (uint16_t*)calloc(1, 2);
+            myassert(data == NULL);
             memfread(data, 2, fp);
             result->data = data;
             break;
@@ -934,6 +967,7 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
         case Float32:
         {
             uint32_t* data = (uint32_t*)calloc(1, 4);
+            myassert(data == NULL);
             memfread(data, 4, fp);
             result->data = data;
             break;
@@ -944,6 +978,7 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
         case WADENTRYLINK:
         {
             uint64_t* data = (uint64_t*)calloc(1, 8);
+            myassert(data == NULL);
             memfread(data, 8, fp);
             result->data = data;
             break;
@@ -951,6 +986,7 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
         case VEC3:
         {
             float* data = (float*)calloc(3, 4);
+            myassert(data == NULL);
             memfread(data, 4 * 3, fp);
             result->data = data;
             break;
@@ -958,6 +994,7 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
         case VEC4:
         {
             float* data = (float*)calloc(4, 4);
+            myassert(data == NULL);
             memfread(data, 4 * 4, fp);
             result->data = data;
             break;
@@ -965,6 +1002,7 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
         case MTX44:
         {
             float* data = (float*)calloc(16, 4);
+            myassert(data == NULL);
             memfread(data, 4 * 16, fp);
             result->data = data;
             break;
@@ -974,6 +1012,7 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
             uint16_t stringlength = 0;
             memfread(&stringlength, 2, fp);
             char* stringb = (char*)calloc(stringlength + 1, 1);
+            myassert(stringb == NULL);
             memfread(stringb, (size_t)stringlength, fp);
             stringb[stringlength] = '\0';
             result->data = stringb;
@@ -987,12 +1026,14 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
             uint32_t size = 0;
             uint32_t count = 0;
             ContainerOrStruct* tmpcs = (ContainerOrStruct*)calloc(1, sizeof(ContainerOrStruct));
+            myassert(tmpcs == NULL);
             memfread(&type, 1, fp);
             memfread(&size, 4, fp);
             memfread(&count, 4, fp);
             tmpcs->itemsize = count;
             tmpcs->valueType = uinttotype(type);
             tmpcs->items = (BinField**)calloc(count, sizeof(BinField**));
+            myassert(tmpcs->items == NULL);
             for (uint32_t i = 0; i < count; i++)
                 tmpcs->items[i] = readvaluebytype(tmpcs->valueType, hasht, fp);
             result->data = tmpcs;
@@ -1004,6 +1045,7 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
             uint32_t size = 0;
             uint16_t count = 0;
             PointerOrEmbed* tmppe = (PointerOrEmbed*)calloc(1, sizeof(PointerOrEmbed));
+            myassert(tmppe == NULL);
             memfread(&tmppe->name, 4, fp);
             if (tmppe->name == 0)
             {
@@ -1014,10 +1056,12 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
             memfread(&count, 2, fp);
             tmppe->itemsize = count;
             tmppe->items = (Field**)calloc(count, sizeof(Field**));
+            myassert(tmppe->items == NULL);
             for (uint16_t i = 0; i < count; i++)
             {
                 uint8_t type = 0;
                 Field* tmpfield = (Field*)calloc(1, sizeof(Field));
+                myassert(tmpfield == NULL);
                 memfread(&tmpfield->key, 4, fp);
                 memfread(&type, 1, fp);
                 tmpfield->value = readvaluebytype(type, hasht, fp);
@@ -1031,11 +1075,13 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
             uint8_t type = 0;
             uint8_t count = 0;
             Option* tmpo = (Option*)calloc(1, sizeof(Option));
+            myassert(tmpo == NULL);
             memfread(&type, 1, fp);
             memfread(&count, 1, fp);
             tmpo->count = count;
             tmpo->valueType = uinttotype(type);
             tmpo->items = (BinField**)calloc(count, sizeof(BinField**));
+            myassert(tmpo->items == NULL);
             for (uint8_t i = 0; i < count; i++)
                 tmpo->items[i] = readvaluebytype(tmpo->valueType, hasht, fp);
             result->data = tmpo;
@@ -1048,6 +1094,7 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
             uint8_t typev = 0;
             uint32_t count = 0;
             Map* tmpmap = (Map*)calloc(1, sizeof(Map));
+            myassert(tmpmap == NULL);
             memfread(&typek, 1, fp);
             memfread(&typev, 1, fp);
             memfread(&size, 4, fp);
@@ -1056,9 +1103,11 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
             tmpmap->keyType = uinttotype(typek);
             tmpmap->valueType = uinttotype(typev);
             tmpmap->items = (Pair**)calloc(count, sizeof(Pair**));
+            myassert(tmpmap->items == NULL);
             for (uint32_t i = 0; i < count; i++)
             {
                 Pair* pairtmp = (Pair*)calloc(1, sizeof(Pair));
+                myassert(pairtmp == NULL);
                 pairtmp->key = readvaluebytype(tmpmap->keyType, hasht, fp);
                 pairtmp->value = readvaluebytype(tmpmap->valueType, hasht, fp);
                 tmpmap->items[i] = pairtmp;
@@ -1279,11 +1328,11 @@ typedef struct PacketBin
 PacketBin* decode(char* filepath, HashTable* hasht)
 {
     PacketBin* packet = (PacketBin*)calloc(1, sizeof(PacketBin*));
+    myassert(packet == NULL);
     FILE* file = fopen(filepath, "rb");
     if (!file)
     {
         printf("ERROR: cannot read file \"%s\".\n", filepath);
-        scanf("press enter to exit.");
         return NULL;
     }
 
@@ -1292,7 +1341,8 @@ PacketBin* decode(char* filepath, HashTable* hasht)
     long fsize = ftell(file);
     fseek(file, 0, SEEK_SET);
     char* fp = (char*)malloc(fsize + 1);
-    fread(fp, fsize, 1, file);
+    myassert(fp == NULL);
+    myassert(fread(fp, fsize, 1, file) == NULL);
     fp[fsize] = '\0';
     fclose(file);
 
@@ -1305,7 +1355,6 @@ PacketBin* decode(char* filepath, HashTable* hasht)
         if (memcmp(&Signature, "PROP", 4) != 0)
         {
             printf("bin has no valid signature\n");
-            scanf("press enter to exit.");
             return NULL;
         }
         packet->isprop = false;
@@ -1313,7 +1362,6 @@ PacketBin* decode(char* filepath, HashTable* hasht)
     if (memcmp(&Signature, "PROP", 4) != 0)
     {
         printf("bin has no valid signature\n");
-        scanf("press enter to exit.");
         return NULL;
     }
     else
@@ -1332,9 +1380,11 @@ PacketBin* decode(char* filepath, HashTable* hasht)
         if (linkedFilesCount > 0)
         {
             char** LinkedListt = (char**)calloc(linkedFilesCount, sizeof(char**));
+            myassert(LinkedListt == NULL);
             for (uint32_t i = 0; i < linkedFilesCount; i++) {
                 memfread(&stringlength, 2, &fp);
                 LinkedListt[i] = (char*)calloc(stringlength + 1, 1);
+                myassert(LinkedListt[i] == NULL);
                 memfread(LinkedListt[i], (size_t)stringlength, &fp);
                 LinkedListt[i][stringlength] = '\0';
             }
@@ -1348,13 +1398,16 @@ PacketBin* decode(char* filepath, HashTable* hasht)
     memfread(&entryCount, 4, &fp);
 
     uint32_t* entryTypes = (uint32_t*)calloc(entryCount, 4);
+    myassert(entryTypes == NULL);
     memfread(entryTypes, entryCount * 4, &fp);
 
     Map* entriesMap = (Map*)calloc(1, sizeof(Map));
+    myassert(entriesMap == NULL);
     entriesMap->keyType = HASH;
     entriesMap->valueType = EMBEDDED;
     entriesMap->itemsize = entryCount;
     entriesMap->items = (Pair**)calloc(entryCount, sizeof(Pair**));
+    myassert(entriesMap->items == NULL);
     for (size_t i = 0; i < entryCount; i++)
     {
         uint32_t entryLength = 0;
@@ -1367,9 +1420,11 @@ PacketBin* decode(char* filepath, HashTable* hasht)
         memfread(&fieldcount, 2, &fp);
 
         PointerOrEmbed* entry = (PointerOrEmbed*)calloc(1, sizeof(PointerOrEmbed));
+        myassert(entry == NULL);
         entry->itemsize = fieldcount;
         entry->name = entryTypes[i];
         entry->items = (Field**)calloc(fieldcount, sizeof(Field**));
+        myassert(entry->items == NULL);
         for (uint16_t o = 0; o < fieldcount; o++)
         {
             uint32_t name = 0;
@@ -1379,28 +1434,34 @@ PacketBin* decode(char* filepath, HashTable* hasht)
             memfread(&type, 1, &fp);
 
             Field* fieldtmp = (Field*)calloc(1, sizeof(Field));
+            myassert(fieldtmp == NULL);
             fieldtmp->key = name;
             fieldtmp->value = readvaluebytype(type, hasht, &fp);
             entry->items[o] = fieldtmp;
         }
 
         void* ptr = calloc(1, sizeof(uint32_t));
+        myassert(ptr == NULL);
         *((uint32_t*)ptr) = entryKeyHash;
         BinField* hash = (BinField*)calloc(1, sizeof(BinField));
+        myassert(hash == NULL);
         hash->typebin = HASH;
         hash->data = ptr;
 
         BinField* entrye = (BinField*)calloc(1, sizeof(BinField));
+        myassert(entrye == NULL);
         entrye->typebin = EMBEDDED;
         entrye->data = entry;
 
         Pair* pairtmp = (Pair*)calloc(1, sizeof(Pair));
+        myassert(pairtmp == NULL);
         pairtmp->key = hash;
         pairtmp->value = entrye;
         entriesMap->items[i] = pairtmp;
     }
 
     BinField* entriesMapbin = (BinField*)calloc(1, sizeof(BinField));
+    myassert(entriesMapbin == NULL);
     entriesMapbin->typebin = MAP;
     entriesMapbin->data = entriesMap;
     packet->entriesMap = entriesMapbin;
@@ -1414,6 +1475,7 @@ int encode(char* filepath, PacketBin* packet)
 {
     printf("creating bin file.\n");
     charv* str = (charv*)calloc(1, sizeof(charv));
+    myassert(str == NULL);
     if (packet->isprop == false)
     {
         uint32_t unk1 = 1, unk2 = 0;
@@ -1467,7 +1529,6 @@ int encode(char* filepath, PacketBin* packet)
     if (!file)
     {
         printf("ERROR: cannot write file \"%s\".", filepath);
-        scanf("press enter to exit.");
         return 1;
     }
     fwrite(str->data, str->lenght, 1, file);
