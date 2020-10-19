@@ -1,0 +1,8 @@
+.vs/
+*.pdb
+*.iobj
+*.ipdb
+Debug/
+BinReaderGUI/Debug/
+BinReaderGUI/DebugWR/
+BinReaderGUI/Release/
