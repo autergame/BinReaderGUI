@@ -408,7 +408,8 @@ int main()
 		SwapBuffers(gldc);
 	}
 
-	cleanbin(packet->entriesMap);
+	if (packet != NULL)
+		cleanbin(packet->entriesMap);
 
 	ImGui_ImplOpenGL3_Shutdown();
 	wglDeleteContext(gl33_context);
