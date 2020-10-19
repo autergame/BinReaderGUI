@@ -733,6 +733,8 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
                     sscanf(string, "%g", &arr[i]);
                 free(string);
                 free(buf);
+                if (i < 1)
+                    ImGui::SameLine();
             }
             break;
         }
@@ -741,7 +743,6 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
             float* arr = (float*)value->data;
             for (int i = 0; i < 3; i++)
             {
-                ImGui::SameLine();
                 uint8_t havepoint = 0;
                 char* buf = (char*)calloc(64, 1);
                 myassert(buf == NULL);
@@ -756,6 +757,8 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
                     sscanf(string, "%g", &arr[i]);
                 free(string);
                 free(buf);
+                if(i < 2)
+                    ImGui::SameLine();
             }
             break;
         }
@@ -764,7 +767,6 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
             float* arr = (float*)value->data;
             for (int i = 0; i < 4; i++)
             {
-                ImGui::SameLine();
                 uint8_t havepoint = 0;
                 char* buf = (char*)calloc(64, 1);
                 myassert(buf == NULL);
@@ -779,6 +781,8 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
                     sscanf(string, "%g", &arr[i]);
                 free(string);
                 free(buf);
+                if (i < 3)
+                    ImGui::SameLine();
             }
             break;
         }
@@ -802,6 +806,8 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
                     sscanf(string, "%g", &arr[i]);
                 free(string);
                 free(buf);
+                if (i < 15)
+                    ImGui::SameLine();
             }
             break;
         }
@@ -810,7 +816,6 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
             uint8_t* arr = (uint8_t*)value->data;
             for (int i = 0; i < 4; i++)
             {
-                ImGui::SameLine();
                 char* buf = (char*)calloc(64, 1);
                 myassert(buf == NULL);
                 sprintf(buf, "%" PRIu8, arr[i]);
@@ -819,6 +824,8 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
                     sscanf(string, "%" PRIu8, &arr[i]);
                 free(string);
                 free(buf);
+                if (i < 3)
+                    ImGui::SameLine();
             }
             break;
         }
@@ -864,7 +871,11 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
         {
             ContainerOrStruct* cs = (ContainerOrStruct*)value->data;
             for (uint32_t i = 0; i < cs->itemsize; i++)
+            {
+                ImGui::Indent();
                 getvaluefromtype(cs->items[i], hasht);
+                ImGui::Unindent();
+            }
             break;
         }
         case POINTER:
@@ -915,17 +926,23 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
         {
             Option* op = (Option*)value->data;
             for (uint8_t i = 0; i < op->count; i++)
+            {
+                ImGui::Indent();
                 getvaluefromtype(op->items[i], hasht);
+                ImGui::Unindent();
+            }
             break;
         }
         case MAP:
         {   
             Map* mp = (Map*)value->data;
             for (uint32_t i = 0; i < mp->itemsize; i++)
-            {         
+            {        
+                ImGui::Indent();
                 getvaluefromtype(mp->items[i]->key, hasht);
                 ImGui::SameLine(); ImGui::Text(":"); ImGui::SameLine();
                 getvaluefromtype(mp->items[i]->value, hasht);
+                ImGui::Unindent();
             }           
             break;
         }
