@@ -590,7 +590,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
             sprintf(buf, "%" PRIi8, *(int8_t*)value->data);
             char* string = inputtext(buf, value->id);
             if (string != NULL)
-                sscanf(string, "%" PRIi8, value->data);
+                sscanf(string, "%" PRIi8, (int8_t*)value->data);
             free(string);
             free(buf);
             break;
@@ -601,7 +601,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
             sprintf(buf, "%" PRIu8, *(uint8_t*)value->data);
             char* string = inputtext(buf, value->id);
             if (string != NULL)
-                sscanf(string, "%" PRIu8, value->data);
+                sscanf(string, "%" PRIu8, (uint8_t*)value->data);
             free(string);
             free(buf);
             break;
@@ -612,7 +612,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
             sprintf(buf, "%" PRIi16, *(int16_t*)value->data);
             char* string = inputtext(buf, value->id);
             if (string != NULL)
-                sscanf(string, "%" PRIi16, value->data);
+                sscanf(string, "%" PRIi16, (int16_t*)value->data);
             free(string);
             free(buf);
             break;
@@ -623,7 +623,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
             sprintf(buf, "%" PRIu16, *(uint16_t*)value->data);
             char* string = inputtext(buf, value->id);
             if (string != NULL)
-                sscanf(string, "%" PRIu16, value->data);
+                sscanf(string, "%" PRIu16, (uint16_t*)value->data);
             free(string);
             free(buf);
             break;
@@ -634,7 +634,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
             sprintf(buf, "%" PRIi32, *(int32_t*)value->data);
             char* string = inputtext(buf, value->id);
             if (string != NULL)
-                sscanf(string, "%" PRIi32, value->data);
+                sscanf(string, "%" PRIi32, (int32_t*)value->data);
             free(string);
             free(buf);
             break;
@@ -645,7 +645,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
             sprintf(buf, "%" PRIu32, *(uint32_t*)value->data);
             char* string = inputtext(buf, value->id);
             if (string != NULL)
-                sscanf(string, "%" PRIu32, value->data);
+                sscanf(string, "%" PRIu32, (uint32_t*)value->data);
             free(string);
             free(buf);
             break;
@@ -656,7 +656,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
             sprintf(buf, "%" PRIi64, *(int64_t*)value->data);
             char* string = inputtext(buf, value->id);
             if (string != NULL)
-                sscanf(string, "%" PRIi64, value->data);
+                sscanf(string, "%" PRIi64, (int64_t*)value->data);
             free(string);
             free(buf);
             break;
@@ -667,7 +667,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
             sprintf(buf, "%" PRIu64, *(uint64_t*)value->data);
             char* string = inputtext(buf, value->id);
             if (string != NULL)
-                sscanf(string, "%" PRIu64, value->data);
+                sscanf(string, "%" PRIu64, (uint64_t*)value->data);
             free(string);
             free(buf);
             break;
@@ -677,14 +677,14 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
             uint8_t havepoint = 0;
             char* buf = (char*)calloc(64, 1);
             int length = sprintf(buf, "%.9g", *(float*)value->data);
-            for (int i = 0; i < ((size_t)length); i++)
+            for (int i = 0; i < length; i++)
                 if (buf[i] == '.')
                     havepoint = 1;
             if (havepoint == 0)
                 length = sprintf(buf, "%.9g.0", *(float*)value->data);
             char* string = inputtext(buf, value->id);
             if (string != NULL)
-                sscanf(string, "%g", value->data);
+                sscanf(string, "%g", (float*)value->data);
             free(string);
             free(buf);
             break;
@@ -698,7 +698,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
                 uint8_t havepoint = 0;
                 char* buf = (char*)calloc(64, 1);
                 int length = sprintf(buf, "%.9g", arr[i]);
-                for (int k = 0; k < ((size_t)length); k++)
+                for (int k = 0; k < length; k++)
                     if (buf[k] == '.')
                         havepoint = 1;
                 if (havepoint == 0)
@@ -720,7 +720,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
                 uint8_t havepoint = 0;
                 char* buf = (char*)calloc(64, 1);
                 int length = sprintf(buf, "%.9g", arr[i]);
-                for (int k = 0; k < ((size_t)length); k++)
+                for (int k = 0; k < length; k++)
                     if (buf[k] == '.')
                         havepoint = 1;
                 if (havepoint == 0)
@@ -742,7 +742,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
                 uint8_t havepoint = 0;
                 char* buf = (char*)calloc(64, 1);
                 int length = sprintf(buf, "%.9g", arr[i]);
-                for (int k = 0; k < ((size_t)length); k++)
+                for (int k = 0; k < length; k++)
                     if (buf[k] == '.')
                         havepoint = 1;
                 if (havepoint == 0)
@@ -764,7 +764,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
                 uint8_t havepoint = 0;
                 char* buf = (char*)calloc(64, 1);
                 int length = sprintf(buf, "%.9g", arr[i]);
-                for (int k = 0; k < ((size_t)length); k++)
+                for (int k = 0; k < length; k++)
                     if (buf[k] == '.')
                         havepoint = 1;
                 if (havepoint == 0)
@@ -928,6 +928,7 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
         }
         case LINK:
         case HASH:
+        case RGBA:
         case SInt32:
         case UInt32:
         case Float32:
@@ -937,19 +938,13 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
             result->data = data;
             break;
         }
+        case VEC2:
         case SInt64:
         case UInt64:
         case WADENTRYLINK:
         {
             uint64_t* data = (uint64_t*)calloc(1, 8);
             memfread(data, 8, fp);
-            result->data = data;
-            break;
-        }
-        case VEC2:
-        {
-            float* data = (float*)calloc(2, 4);
-            memfread(data, 4 * 2, fp);
             result->data = data;
             break;
         }
@@ -971,13 +966,6 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
         {
             float* data = (float*)calloc(16, 4);
             memfread(data, 4 * 16, fp);
-            result->data = data;
-            break;
-        }
-        case RGBA:
-        {
-            uint8_t* data = (uint8_t*)calloc(4, 1);
-            memfread(data, 4, fp);
             result->data = data;
             break;
         }
