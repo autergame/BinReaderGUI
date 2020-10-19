@@ -6,7 +6,6 @@
 #include "libs/imgui/imgui_impl_win32.h"
 #include "libs/imgui/imgui_impl_opengl3.h"
 #include "libs/imgui/imgui_internal.h"
-//#include "libs/ImWindow/imwConfig.h"
 #include "BinReaderLib.h"
 #include <windows.h>
 
