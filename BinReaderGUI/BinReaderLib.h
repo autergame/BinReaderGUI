@@ -271,18 +271,26 @@ static const char* Type_strings[] = {
     "Hash", "WadEntryLink", "Container", "Struct", "Pointer", "Embedded", "Link", "Option", "Map", "Flag"
 };
 
-static uint8_t flag = 128;
+static const int Type_size[] = {
+    0, 1, 1, 1, 2, 2, 4, 4, 8, 8, 4, 8, 12, 16, 64, 4, 0, 4, 8, 0, 0, 0, 0, 0, 0, 0, 1
+};
+
+static const char* Type_fmt[] = {
+    NULL, NULL, "%" PRIu8, "%" PRIi8, "%" PRIu16, "%" PRIi16, "%" PRIu32, "%" PRIi32, "%" PRIu64, "%" PRIi64,
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+};
+
 Type uinttotype(uint8_t type)
 {
-    if ((type & flag) == flag)
-        type = (type - flag) + CONTAINER;
+    if (type & 0x80)
+        type = (type - 0x80) + CONTAINER;
     return (Type)type;
 }
 uint8_t typetouint(Type type)
 {
     uint8_t raw = type;
     if (raw >= CONTAINER)
-        raw = (raw - CONTAINER) + flag;
+        raw = (raw - CONTAINER) + 0x80;
     return raw;
 }
 
@@ -578,373 +586,292 @@ void getstructidbin(BinField* value, uintptr_t* tree)
 
 void getvaluefromtype(BinField* value, HashTable* hasht)
 {
-    switch (value->typebin)
+    const char* fmt = Type_fmt[value->typebin];
+    if (fmt != NULL)
     {
-        case NONE:
-            ImGui::Text("NULL");
-            break;
-        case FLAG:
-        case BOOLB:
+        char* buf = (char*)calloc(32, 1);
+        myassert(buf == NULL);
+        sprintf(buf, fmt, value->data);
+        char* string = inputtext(buf, value->id);
+        if (string != NULL)
+            sscanf(string, fmt, value->data);
+        free(string);
+        free(buf);
+    }
+    else
+    {
+        switch (value->typebin)
         {
-            char* string = inputtext(*(uint8_t*)value->data == 1 ? "true" : "false", value->id);
-            if (string != NULL)
+            case NONE:
+                ImGui::Text("NULL");
+                break;
+            case FLAG:
+            case BOOLB:
             {
-                for (int i = 0; string[i]; i++)
-                    string[i] = tolower(string[i]);
-                if (strcmp(string, "true") == 0)
-                    *(uint8_t*)value->data = 1;
-                else
-                    *(uint8_t*)value->data = 0;
-            }
-            free(string);
-            break;
-        }
-        case SInt8:
-        {
-            char* buf = (char*)calloc(64, 1);
-            myassert(buf == NULL);
-            sprintf(buf, "%" PRIi8, *(int8_t*)value->data);
-            char* string = inputtext(buf, value->id);
-            if (string != NULL)
-                sscanf(string, "%" PRIi8, (int8_t*)value->data);
-            free(string);
-            free(buf);
-            break;
-        }
-        case UInt8:
-        {
-            char* buf = (char*)calloc(64, 1);
-            myassert(buf == NULL);
-            sprintf(buf, "%" PRIu8, *(uint8_t*)value->data);
-            char* string = inputtext(buf, value->id);
-            if (string != NULL)
-                sscanf(string, "%" PRIu8, (uint8_t*)value->data);
-            free(string);
-            free(buf);
-            break;
-        }
-        case SInt16:
-        {
-            char* buf = (char*)calloc(64, 1);
-            myassert(buf == NULL);
-            sprintf(buf, "%" PRIi16, *(int16_t*)value->data);
-            char* string = inputtext(buf, value->id);
-            if (string != NULL)
-                sscanf(string, "%" PRIi16, (int16_t*)value->data);
-            free(string);
-            free(buf);
-            break;
-        }
-        case UInt16:
-        {
-            char* buf = (char*)calloc(64, 1);
-            myassert(buf == NULL);
-            sprintf(buf, "%" PRIu16, *(uint16_t*)value->data);
-            char* string = inputtext(buf, value->id);
-            if (string != NULL)
-                sscanf(string, "%" PRIu16, (uint16_t*)value->data);
-            free(string);
-            free(buf);
-            break;
-        }
-        case SInt32:
-        {
-            char* buf = (char*)calloc(64, 1);
-            myassert(buf == NULL);
-            sprintf(buf, "%" PRIi32, *(int32_t*)value->data);
-            char* string = inputtext(buf, value->id);
-            if (string != NULL)
-                sscanf(string, "%" PRIi32, (int32_t*)value->data);
-            free(string);
-            free(buf);
-            break;
-        }
-        case UInt32:
-        {
-            char* buf = (char*)calloc(64, 1);
-            myassert(buf == NULL);
-            sprintf(buf, "%" PRIu32, *(uint32_t*)value->data);
-            char* string = inputtext(buf, value->id);
-            if (string != NULL)
-                sscanf(string, "%" PRIu32, (uint32_t*)value->data);
-            free(string);
-            free(buf);
-            break;
-        }
-        case SInt64:
-        {
-            char* buf = (char*)calloc(64, 1);
-            myassert(buf == NULL);
-            sprintf(buf, "%" PRIi64, *(int64_t*)value->data);
-            char* string = inputtext(buf, value->id);
-            if (string != NULL)
-                sscanf(string, "%" PRIi64, (int64_t*)value->data);
-            free(string);
-            free(buf);
-            break;
-        }
-        case UInt64:
-        {
-            char* buf = (char*)calloc(64, 1);
-            myassert(buf == NULL);
-            sprintf(buf, "%" PRIu64, *(uint64_t*)value->data);
-            char* string = inputtext(buf, value->id);
-            if (string != NULL)
-                sscanf(string, "%" PRIu64, (uint64_t*)value->data);
-            free(string);
-            free(buf);
-            break;
-        }
-        case Float32:
-        {
-            uint8_t havepoint = 0;
-            char* buf = (char*)calloc(64, 1);
-            myassert(buf == NULL);
-            int length = sprintf(buf, "%.9g", *(float*)value->data);
-            for (int i = 0; i < length; i++)
-                if (buf[i] == '.')
-                    havepoint = 1;
-            if (havepoint == 0)
-                length = sprintf(buf, "%.9g.0", *(float*)value->data);
-            char* string = inputtext(buf, value->id);
-            if (string != NULL)
-                sscanf(string, "%g", (float*)value->data);
-            free(string);
-            free(buf);
-            break;
-        }
-        case VEC2:
-        {
-            float* arr = (float*)value->data;
-            for (int i = 0; i < 2; i++)
-            {
-                ImGui::SameLine();
-                uint8_t havepoint = 0;
-                char* buf = (char*)calloc(64, 1);
-                myassert(buf == NULL);
-                int length = sprintf(buf, "%.9g", arr[i]);
-                for (int k = 0; k < length; k++)
-                    if (buf[k] == '.')
-                        havepoint = 1;
-                if (havepoint == 0)
-                    length = sprintf(buf, "%.9g.0", arr[i]);
-                char* string = inputtext(buf, value->id+i);
+                char* string = inputtext(*(uint8_t*)value->data == 1 ? "true" : "false", value->id);
                 if (string != NULL)
-                    sscanf(string, "%g", &arr[i]);
+                {
+                    for (int i = 0; string[i]; i++)
+                        string[i] = tolower(string[i]);
+                    if (strcmp(string, "true") == 0)
+                        *(uint8_t*)value->data = 1;
+                    else
+                        *(uint8_t*)value->data = 0;
+                }
                 free(string);
-                free(buf);
-                if (i < 1)
-                    ImGui::SameLine();
+                break;
             }
-            break;
-        }
-        case VEC3:
-        {
-            float* arr = (float*)value->data;
-            for (int i = 0; i < 3; i++)
+            case Float32:
             {
                 uint8_t havepoint = 0;
                 char* buf = (char*)calloc(64, 1);
                 myassert(buf == NULL);
-                int length = sprintf(buf, "%.9g", arr[i]);
-                for (int k = 0; k < length; k++)
-                    if (buf[k] == '.')
+                int length = sprintf(buf, "%.9g", *(float*)value->data);
+                for (int i = 0; i < length; i++)
+                    if (buf[i] == '.')
                         havepoint = 1;
                 if (havepoint == 0)
-                    length = sprintf(buf, "%.9g.0", arr[i]);
-                char* string = inputtext(buf, value->id+i);
+                    length = sprintf(buf, "%.9g.0", *(float*)value->data);
+                char* string = inputtext(buf, value->id);
                 if (string != NULL)
-                    sscanf(string, "%g", &arr[i]);
+                    sscanf(string, "%g", (float*)value->data);
                 free(string);
                 free(buf);
-                if(i < 2)
-                    ImGui::SameLine();
+                break;
             }
-            break;
-        }
-        case VEC4:
-        {
-            float* arr = (float*)value->data;
-            for (int i = 0; i < 4; i++)
+            case VEC2:
             {
-                uint8_t havepoint = 0;
-                char* buf = (char*)calloc(64, 1);
-                myassert(buf == NULL);
-                int length = sprintf(buf, "%.9g", arr[i]);
-                for (int k = 0; k < length; k++)
-                    if (buf[k] == '.')
-                        havepoint = 1;
-                if (havepoint == 0)
-                    length = sprintf(buf, "%.9g.0", arr[i]);
-                char* string = inputtext(buf, value->id+i);
+                float* arr = (float*)value->data;
+                for (int i = 0; i < 2; i++)
+                {
+                    ImGui::SameLine();
+                    uint8_t havepoint = 0;
+                    char* buf = (char*)calloc(64, 1);
+                    myassert(buf == NULL);
+                    int length = sprintf(buf, "%.9g", arr[i]);
+                    for (int k = 0; k < length; k++)
+                        if (buf[k] == '.')
+                            havepoint = 1;
+                    if (havepoint == 0)
+                        length = sprintf(buf, "%.9g.0", arr[i]);
+                    char* string = inputtext(buf, value->id + i);
+                    if (string != NULL)
+                        sscanf(string, "%g", &arr[i]);
+                    free(string);
+                    free(buf);
+                    if (i < 1)
+                        ImGui::SameLine();
+                }
+                break;
+            }
+            case VEC3:
+            {
+                float* arr = (float*)value->data;
+                for (int i = 0; i < 3; i++)
+                {
+                    uint8_t havepoint = 0;
+                    char* buf = (char*)calloc(64, 1);
+                    myassert(buf == NULL);
+                    int length = sprintf(buf, "%.9g", arr[i]);
+                    for (int k = 0; k < length; k++)
+                        if (buf[k] == '.')
+                            havepoint = 1;
+                    if (havepoint == 0)
+                        length = sprintf(buf, "%.9g.0", arr[i]);
+                    char* string = inputtext(buf, value->id + i);
+                    if (string != NULL)
+                        sscanf(string, "%g", &arr[i]);
+                    free(string);
+                    free(buf);
+                    if (i < 2)
+                        ImGui::SameLine();
+                }
+                break;
+            }
+            case VEC4:
+            {
+                float* arr = (float*)value->data;
+                for (int i = 0; i < 4; i++)
+                {
+                    uint8_t havepoint = 0;
+                    char* buf = (char*)calloc(64, 1);
+                    myassert(buf == NULL);
+                    int length = sprintf(buf, "%.9g", arr[i]);
+                    for (int k = 0; k < length; k++)
+                        if (buf[k] == '.')
+                            havepoint = 1;
+                    if (havepoint == 0)
+                        length = sprintf(buf, "%.9g.0", arr[i]);
+                    char* string = inputtext(buf, value->id + i);
+                    if (string != NULL)
+                        sscanf(string, "%g", &arr[i]);
+                    free(string);
+                    free(buf);
+                    if (i < 3)
+                        ImGui::SameLine();
+                }
+                break;
+            }
+            case MTX44:
+            {
+                float* arr = (float*)value->data;
+                for (int i = 0; i < 16; i++)
+                {
+                    ImGui::SameLine();
+                    uint8_t havepoint = 0;
+                    char* buf = (char*)calloc(64, 1);
+                    myassert(buf == NULL);
+                    int length = sprintf(buf, "%.9g", arr[i]);
+                    for (int k = 0; k < length; k++)
+                        if (buf[k] == '.')
+                            havepoint = 1;
+                    if (havepoint == 0)
+                        length = sprintf(buf, "%.9g.0", arr[i]);
+                    char* string = inputtext(buf, value->id + i);
+                    if (string != NULL)
+                        sscanf(string, "%g", &arr[i]);
+                    free(string);
+                    free(buf);
+                    if (i < 15)
+                        ImGui::SameLine();
+                }
+                break;
+            }
+            case RGBA:
+            {
+                uint8_t* arr = (uint8_t*)value->data;
+                for (int i = 0; i < 4; i++)
+                {
+                    char* buf = (char*)calloc(64, 1);
+                    myassert(buf == NULL);
+                    sprintf(buf, "%" PRIu8, arr[i]);
+                    char* string = inputtext(buf, value->id + i);
+                    if (string != NULL)
+                        sscanf(string, "%" PRIu8, &arr[i]);
+                    free(string);
+                    free(buf);
+                    if (i < 3)
+                        ImGui::SameLine();
+                }
+                break;
+            }
+            case STRING:
+            {
+                char* string = inputtext((char*)value->data, value->id);
                 if (string != NULL)
-                    sscanf(string, "%g", &arr[i]);
-                free(string);
-                free(buf);
-                if (i < 3)
-                    ImGui::SameLine();
+                {
+                    free(value->data);
+                    value->data = string;
+                }
+                break;
             }
-            break;
-        }
-        case MTX44:
-        {
-            float* arr = (float*)value->data;
-            for (int i = 0; i < 16; i++)
+            case HASH:
+            case LINK:
             {
-                ImGui::SameLine();
-                uint8_t havepoint = 0;
-                char* buf = (char*)calloc(64, 1);
-                myassert(buf == NULL);
-                int length = sprintf(buf, "%.9g", arr[i]);
-                for (int k = 0; k < length; k++)
-                    if (buf[k] == '.')
-                        havepoint = 1;
-                if (havepoint == 0)
-                    length = sprintf(buf, "%.9g.0", arr[i]);
-                char* string = inputtext(buf, value->id+i);
+                char* string = inputtext(hashtostr(hasht, *(uint32_t*)value->data), value->id);
                 if (string != NULL)
-                    sscanf(string, "%g", &arr[i]);
-                free(string);
-                free(buf);
-                if (i < 15)
-                    ImGui::SameLine();
+                {
+                    uint32_t data = hashfromstring(string);
+                    value->data = &data;
+                    free(string);
+                }
+                break;
             }
-            break;
-        }
-        case RGBA:
-        {
-            uint8_t* arr = (uint8_t*)value->data;
-            for (int i = 0; i < 4; i++)
+            case WADENTRYLINK:
             {
-                char* buf = (char*)calloc(64, 1);
-                myassert(buf == NULL);
-                sprintf(buf, "%" PRIu8, arr[i]);
-                char* string = inputtext(buf, value->id+i);
+                char* strvalue = (char*)calloc(10, 1);
+                myassert(strvalue == NULL);
+                sprintf(strvalue, "0x%016" PRIX64, *(uint64_t*)value->data);
+                char* string = inputtext(strvalue, value->id);
                 if (string != NULL)
-                    sscanf(string, "%" PRIu8, &arr[i]);
-                free(string);
-                free(buf);
-                if (i < 3)
-                    ImGui::SameLine();
+                {
+                    uint64_t data = hashfromstringxx(string);
+                    value->data = &data;
+                    free(string);
+                }
+                free(strvalue);
+                break;
             }
-            break;
-        }
-        case STRING:
-        {
-            char* string = inputtext((char*)value->data, value->id);
-            if (string != NULL)
+            case CONTAINER:
+            case STRUCT:
             {
-                free(value->data);
-                value->data = string;
-            }
-            break;
-        }
-        case HASH:
-        case LINK:
-        {
-            char* string = inputtext(hashtostr(hasht, *(uint32_t*)value->data), value->id);
-            if (string != NULL)
-            {
-                uint32_t data = hashfromstring(string);
-                value->data = &data;
-                free(string);
-            }
-            break;
-        }
-        case WADENTRYLINK:
-        {
-            char* strvalue = (char*)calloc(10, 1);
-            myassert(strvalue == NULL);
-            sprintf(strvalue, "0x%016" PRIX64, *(uint64_t*)value->data);
-            char* string = inputtext(strvalue, value->id);
-            if (string != NULL)
-            {
-                uint64_t data = hashfromstringxx(string);
-                value->data = &data;
-                free(string);
-            }
-            free(strvalue);
-            break;
-        }
-        case CONTAINER:
-        case STRUCT:
-        {
-            ContainerOrStruct* cs = (ContainerOrStruct*)value->data;
-            for (uint32_t i = 0; i < cs->itemsize; i++)
-            {
-                ImGui::Indent();
-                getvaluefromtype(cs->items[i], hasht);
-                ImGui::Unindent();
-            }
-            break;
-        }
-        case POINTER:
-        case EMBEDDED:
-        {
-            ImGui::AlignTextToFramePadding();
-            PointerOrEmbed* pe = (PointerOrEmbed*)value->data;
-            bool treeopen = ImGui::TreeNodeEx((void*)value->id,
-                ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth, "");
-            ImGui::SameLine(); inputtextmod(hasht, &pe->name, value->id+1);
-            ImGui::SameLine(); getarraycount(value);
-            if (treeopen)
-            {            
-                for (uint16_t i = 0; i < pe->itemsize; i++)
+                ContainerOrStruct* cs = (ContainerOrStruct*)value->data;
+                for (uint32_t i = 0; i < cs->itemsize; i++)
                 {
                     ImGui::Indent();
-                    Type typi = pe->items[i]->value->typebin;
-                    if ((typi >= CONTAINER && typi <= EMBEDDED) || typi == OPTION || typi == MAP)
-                    {        
-                        ImGui::AlignTextToFramePadding();
-                        bool treeopene = ImGui::TreeNodeEx((void*)(pe->items[i]->value->id-2),
-                            ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth, "");
-                        ImGui::SameLine(); inputtextmod(hasht, &pe->items[i]->key, pe->items[i]->value->id-1);
-                        ImGui::SameLine(); ImGui::Text(": %s", Type_strings[typi]); getarraytype(pe->items[i]->value);
-                        ImGui::SameLine(); getarraycount(pe->items[i]->value);
-                        if (treeopene)
-                        {
-                            ImGui::Indent();
-                            getvaluefromtype(pe->items[i]->value, hasht);
-                            ImGui::TreePop();
-                            ImGui::Unindent();
-                        }
-                    }
-                    else
-                    {
-                        inputtextmod(hasht, &pe->items[i]->key, pe->items[i]->value->id-1);
-                        ImGui::SameLine(); ImGui::Text(": %s", Type_strings[typi]);
-                        ImGui::SameLine(); ImGui::Text("="); ImGui::SameLine();
-                        getvaluefromtype(pe->items[i]->value, hasht);
-                    }
+                    getvaluefromtype(cs->items[i], hasht);
                     ImGui::Unindent();
                 }
-                ImGui::TreePop();
+                break;
             }
-            break;
-        }
-        case OPTION:
-        {
-            Option* op = (Option*)value->data;
-            for (uint8_t i = 0; i < op->count; i++)
+            case POINTER:
+            case EMBEDDED:
             {
-                ImGui::Indent();
-                getvaluefromtype(op->items[i], hasht);
-                ImGui::Unindent();
+                ImGui::AlignTextToFramePadding();
+                PointerOrEmbed* pe = (PointerOrEmbed*)value->data;
+                bool treeopen = ImGui::TreeNodeEx((void*)value->id,
+                    ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth, "");
+                ImGui::SameLine(); inputtextmod(hasht, &pe->name, value->id + 1);
+                ImGui::SameLine(); getarraycount(value);
+                if (treeopen)
+                {
+                    for (uint16_t i = 0; i < pe->itemsize; i++)
+                    {
+                        ImGui::Indent();
+                        Type typi = pe->items[i]->value->typebin;
+                        if ((typi >= CONTAINER && typi <= EMBEDDED) || typi == OPTION || typi == MAP)
+                        {
+                            ImGui::AlignTextToFramePadding();
+                            bool treeopene = ImGui::TreeNodeEx((void*)(pe->items[i]->value->id - 2),
+                                ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth, "");
+                            ImGui::SameLine(); inputtextmod(hasht, &pe->items[i]->key, pe->items[i]->value->id - 1);
+                            ImGui::SameLine(); ImGui::Text(": %s", Type_strings[typi]); getarraytype(pe->items[i]->value);
+                            ImGui::SameLine(); getarraycount(pe->items[i]->value);
+                            if (treeopene)
+                            {
+                                ImGui::Indent();
+                                getvaluefromtype(pe->items[i]->value, hasht);
+                                ImGui::TreePop();
+                                ImGui::Unindent();
+                            }
+                        }
+                        else
+                        {
+                            inputtextmod(hasht, &pe->items[i]->key, pe->items[i]->value->id - 1);
+                            ImGui::SameLine(); ImGui::Text(": %s", Type_strings[typi]);
+                            ImGui::SameLine(); ImGui::Text("="); ImGui::SameLine();
+                            getvaluefromtype(pe->items[i]->value, hasht);
+                        }
+                        ImGui::Unindent();
+                    }
+                    ImGui::TreePop();
+                }
+                break;
             }
-            break;
-        }
-        case MAP:
-        {   
-            Map* mp = (Map*)value->data;
-            for (uint32_t i = 0; i < mp->itemsize; i++)
-            {        
-                ImGui::Indent();
-                getvaluefromtype(mp->items[i]->key, hasht);
-                ImGui::SameLine(); ImGui::Text(":"); ImGui::SameLine();
-                getvaluefromtype(mp->items[i]->value, hasht);
-                ImGui::Unindent();
-            }           
-            break;
+            case OPTION:
+            {
+                Option* op = (Option*)value->data;
+                for (uint8_t i = 0; i < op->count; i++)
+                {
+                    ImGui::Indent();
+                    getvaluefromtype(op->items[i], hasht);
+                    ImGui::Unindent();
+                }
+                break;
+            }
+            case MAP:
+            {
+                Map* mp = (Map*)value->data;
+                for (uint32_t i = 0; i < mp->itemsize; i++)
+                {
+                    ImGui::Indent();
+                    getvaluefromtype(mp->items[i]->key, hasht);
+                    ImGui::SameLine(); ImGui::Text(":"); ImGui::SameLine();
+                    getvaluefromtype(mp->items[i]->value, hasht);
+                    ImGui::Unindent();
+                }
+                break;
+            }
         }
     }
 }
@@ -954,6 +881,14 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
     BinField* result = (BinField*)calloc(1, sizeof(BinField));
     myassert(result == NULL);
     result->typebin = uinttotype(typeidbin);
+    //int size = Type_size[result->typebin];
+    //if (size != 0)
+    //{
+    //    void* data = (void*)malloc(size);
+    //    myassert(data == NULL);
+    //    memfread(data, size, fp);
+    //    result->data = data;
+    //}
     switch (result->typebin)
     {
         case FLAG:
@@ -1138,82 +1073,52 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
 
 uint32_t getsize(BinField* value)
 {
-    uint32_t size = 0;
-    switch (value->typebin)
+    uint32_t size = Type_size[value->typebin];
+    if (size == 0)
     {
-        case FLAG:
-        case BOOLB:
-        case SInt8:
-        case UInt8:
-            size = 1;
-            break;
-        case SInt16:
-        case UInt16:
-            size = 2;
-            break;
-        case LINK:
-        case HASH:
-        case RGBA:
-        case SInt32:
-        case UInt32:
-        case Float32:
-            size = 4;
-            break;
-        case VEC2:
-        case SInt64:
-        case UInt64:
-        case WADENTRYLINK:
-            size = 8;
-            break;
-        case VEC3:
-            size = 12;
-            break;
-        case VEC4:
-            size = 16;
-            break;
-        case MTX44:
-            size = 64;
-            break;
-        case STRING:
-            size = 2 + strlen((char*)value->data);
-            break;
-        case STRUCT:
-        case CONTAINER:
+        switch (value->typebin)
         {
-            size = 1 + 4 + 4;
-            ContainerOrStruct* cs = (ContainerOrStruct*)value->data;
-            for (uint32_t i = 0; i < cs->itemsize; i++)
-                size += getsize(cs->items[i]);
-            break;
-        }
-        case POINTER:
-        case EMBEDDED:
-        {
-            size = 4;
-            PointerOrEmbed* pe = (PointerOrEmbed*)value->data;
-            if (pe->name != 0)
+            case STRING:
+                size = 2 + strlen((char*)value->data);
+                break;
+            case STRUCT:
+            case CONTAINER:
             {
-                size += 4 + 2;
-                for (uint16_t i = 0; i < pe->itemsize; i++)
-                    size += getsize(pe->items[i]->value) + 4 + 1;
+                size = 1 + 4 + 4;
+                ContainerOrStruct* cs = (ContainerOrStruct*)value->data;
+                for (uint32_t i = 0; i < cs->itemsize; i++)
+                    size += getsize(cs->items[i]);
+                break;
             }
-            break;
-        }
-        case OPTION:
-        {
-            size = 2;
-            Option* op = (Option*)value->data;
-            for (uint8_t i = 0; i < op->count; i++)
-                size += getsize(op->items[i]);
-            break;
-        }
-        case MAP:
-        {
-            size = 1 + 1 + 4 + 4;
-            Map* map = (Map*)value->data;
-            for (uint32_t i = 0; i < map->itemsize; i++)
-                size += getsize(map->items[i]->key) + getsize(map->items[i]->value);
-            break;
+            case POINTER:
+            case EMBEDDED:
+            {
+                size = 4;
+                PointerOrEmbed* pe = (PointerOrEmbed*)value->data;
+                if (pe->name != 0)
+                {
+                    size += 4 + 2;
+                    for (uint16_t i = 0; i < pe->itemsize; i++)
+                        size += getsize(pe->items[i]->value) + 4 + 1;
+                }
+                break;
+            }
+            case OPTION:
+            {
+                size = 2;
+                Option* op = (Option*)value->data;
+                for (uint8_t i = 0; i < op->count; i++)
+                    size += getsize(op->items[i]);
+                break;
+            }
+            case MAP:
+            {
+                size = 1 + 1 + 4 + 4;
+                Map* map = (Map*)value->data;
+                for (uint32_t i = 0; i < map->itemsize; i++)
+                    size += getsize(map->items[i]->key) + getsize(map->items[i]->value);
+                break;
+            }
         }
     }
     return size;
