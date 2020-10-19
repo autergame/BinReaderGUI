@@ -455,6 +455,50 @@ void getarraytype(BinField* value)
     }
 }
 
+void cleanbin(BinField* value)
+{
+    switch (value->typebin)
+    {
+        case STRUCT:
+        case CONTAINER:
+        {
+            ContainerOrStruct* cs = (ContainerOrStruct*)value->data;
+            for (uint32_t i = 0; i < cs->itemsize; i++)
+                cleanbin(cs->items[i]);
+            break;
+        }
+        case POINTER:
+        case EMBEDDED:
+        {
+            PointerOrEmbed* pe = (PointerOrEmbed*)value->data;
+            if (pe->name != 0)
+            {
+                for (uint16_t i = 0; i < pe->itemsize; i++)
+                    cleanbin(pe->items[i]->value);
+            }
+            break;
+        }
+        case OPTION:
+        {
+            Option* op = (Option*)value->data;
+            for (uint8_t i = 0; i < op->count; i++)
+                cleanbin(op->items[i]);
+            break;
+        }
+        case MAP:
+        {
+            Map* map = (Map*)value->data;
+            for (uint32_t i = 0; i < map->itemsize; i++)
+            {
+                cleanbin(map->items[i]->key);
+                cleanbin(map->items[i]->value);
+            }
+            break;
+        }
+    }
+    free(value);
+}
+
 void getstructidbin(BinField* value, uint32_t* tree)
 {
     *tree += 1;

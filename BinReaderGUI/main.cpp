@@ -360,6 +360,8 @@ int main()
 				if (GetOpenFileNameA(&ofn) == TRUE)
 				{
 					treebefore = 0;
+					if (packet != NULL)
+						cleanbin(packet->entriesMap);
 					packet = decode(szFile, hasht);
 					ImGui::GetStateStorage()->Clear();
 					getstructidbin(packet->entriesMap, &treebefore);
@@ -405,6 +407,8 @@ int main()
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 		SwapBuffers(gldc);
 	}
+
+	cleanbin(packet->entriesMap);
 
 	ImGui_ImplOpenGL3_Shutdown();
 	wglDeleteContext(gl33_context);
