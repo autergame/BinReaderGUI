@@ -276,7 +276,7 @@ static const int Type_size[] = {
 };
 
 static const char* Type_fmt[] = {
-    NULL, NULL, "%" PRIu8, "%" PRIi8, "%" PRIu16, "%" PRIi16, "%" PRIu32, "%" PRIi32, "%" PRIu64, "%" PRIi64,
+    NULL, NULL, "%" PRIi8, "%" PRIu8, "%" PRIi16, "%" PRIu16, "%" PRIi32, "%" PRIu32, "%" PRIi64, "%" PRIu64,
     NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
 };
 
@@ -415,6 +415,41 @@ void inputtextmod(HashTable* hasht, uint32_t* hash, uintptr_t id)
     {
         *hash = hashfromstring(string);
         free(string);
+    }
+}
+
+void floatarray(void* data, int size, uintptr_t id)
+{
+    float indent = ImGui::GetCurrentWindow()->DC.CursorPos.x;
+    float* arr = (float*)data;
+    for (int i = 0; i < size; i++)
+    {
+        if (size == 16)
+        {
+            if (i % 4 == 0)
+            {
+                ImGui::NewLine();
+                ImGui::SameLine(indent);
+            }
+            else
+                ImGui::SameLine();
+        }
+        else
+            ImGui::SameLine();
+        uint8_t havepoint = 0;
+        char* buf = (char*)calloc(64, 1);
+        myassert(buf == NULL);
+        int length = sprintf(buf, "%g", arr[i]);
+        for (int k = 0; k < length; k++)
+            if (buf[k] == '.')
+                havepoint = 1;
+        if (havepoint == 0)
+            length = sprintf(buf, "%g.0", arr[i]);
+        char* string = inputtext(buf, id + i);
+        if (string != NULL)
+            sscanf(string, "%g", &arr[i]);
+        free(string);
+        free(buf);
     }
 }
 
@@ -591,7 +626,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
     {
         char* buf = (char*)calloc(32, 1);
         myassert(buf == NULL);
-        sprintf(buf, fmt, value->data);
+        sprintf(buf, fmt, *(uint64_t*)value->data);
         char* string = inputtext(buf, value->id);
         if (string != NULL)
             sscanf(string, fmt, value->data);
@@ -622,121 +657,12 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
                 break;
             }
             case Float32:
-            {
-                uint8_t havepoint = 0;
-                char* buf = (char*)calloc(64, 1);
-                myassert(buf == NULL);
-                int length = sprintf(buf, "%.9g", *(float*)value->data);
-                for (int i = 0; i < length; i++)
-                    if (buf[i] == '.')
-                        havepoint = 1;
-                if (havepoint == 0)
-                    length = sprintf(buf, "%.9g.0", *(float*)value->data);
-                char* string = inputtext(buf, value->id);
-                if (string != NULL)
-                    sscanf(string, "%g", (float*)value->data);
-                free(string);
-                free(buf);
-                break;
-            }
             case VEC2:
-            {
-                float* arr = (float*)value->data;
-                for (int i = 0; i < 2; i++)
-                {
-                    ImGui::SameLine();
-                    uint8_t havepoint = 0;
-                    char* buf = (char*)calloc(64, 1);
-                    myassert(buf == NULL);
-                    int length = sprintf(buf, "%.9g", arr[i]);
-                    for (int k = 0; k < length; k++)
-                        if (buf[k] == '.')
-                            havepoint = 1;
-                    if (havepoint == 0)
-                        length = sprintf(buf, "%.9g.0", arr[i]);
-                    char* string = inputtext(buf, value->id + i);
-                    if (string != NULL)
-                        sscanf(string, "%g", &arr[i]);
-                    free(string);
-                    free(buf);
-                    if (i < 1)
-                        ImGui::SameLine();
-                }
-                break;
-            }
             case VEC3:
-            {
-                float* arr = (float*)value->data;
-                for (int i = 0; i < 3; i++)
-                {
-                    uint8_t havepoint = 0;
-                    char* buf = (char*)calloc(64, 1);
-                    myassert(buf == NULL);
-                    int length = sprintf(buf, "%.9g", arr[i]);
-                    for (int k = 0; k < length; k++)
-                        if (buf[k] == '.')
-                            havepoint = 1;
-                    if (havepoint == 0)
-                        length = sprintf(buf, "%.9g.0", arr[i]);
-                    char* string = inputtext(buf, value->id + i);
-                    if (string != NULL)
-                        sscanf(string, "%g", &arr[i]);
-                    free(string);
-                    free(buf);
-                    if (i < 2)
-                        ImGui::SameLine();
-                }
-                break;
-            }
             case VEC4:
-            {
-                float* arr = (float*)value->data;
-                for (int i = 0; i < 4; i++)
-                {
-                    uint8_t havepoint = 0;
-                    char* buf = (char*)calloc(64, 1);
-                    myassert(buf == NULL);
-                    int length = sprintf(buf, "%.9g", arr[i]);
-                    for (int k = 0; k < length; k++)
-                        if (buf[k] == '.')
-                            havepoint = 1;
-                    if (havepoint == 0)
-                        length = sprintf(buf, "%.9g.0", arr[i]);
-                    char* string = inputtext(buf, value->id + i);
-                    if (string != NULL)
-                        sscanf(string, "%g", &arr[i]);
-                    free(string);
-                    free(buf);
-                    if (i < 3)
-                        ImGui::SameLine();
-                }
-                break;
-            }
             case MTX44:
-            {
-                float* arr = (float*)value->data;
-                for (int i = 0; i < 16; i++)
-                {
-                    ImGui::SameLine();
-                    uint8_t havepoint = 0;
-                    char* buf = (char*)calloc(64, 1);
-                    myassert(buf == NULL);
-                    int length = sprintf(buf, "%.9g", arr[i]);
-                    for (int k = 0; k < length; k++)
-                        if (buf[k] == '.')
-                            havepoint = 1;
-                    if (havepoint == 0)
-                        length = sprintf(buf, "%.9g.0", arr[i]);
-                    char* string = inputtext(buf, value->id + i);
-                    if (string != NULL)
-                        sscanf(string, "%g", &arr[i]);
-                    free(string);
-                    free(buf);
-                    if (i < 15)
-                        ImGui::SameLine();
-                }
+                floatarray(value->data, Type_size[value->typebin]/4, value->id);
                 break;
-            }
             case RGBA:
             {
                 uint8_t* arr = (uint8_t*)value->data;
@@ -772,7 +698,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
                 if (string != NULL)
                 {
                     uint32_t data = hashfromstring(string);
-                    value->data = &data;
+                    memcpy(value->data, &data, 4);
                     free(string);
                 }
                 break;
@@ -786,7 +712,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
                 if (string != NULL)
                 {
                     uint64_t data = hashfromstringxx(string);
-                    value->data = &data;
+                    memcpy(value->data, &data, 8);
                     free(string);
                 }
                 free(strvalue);
