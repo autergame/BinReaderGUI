@@ -272,7 +272,7 @@ static const char* Type_strings[] = {
 };
 
 static const int Type_size[] = {
-    0, 1, 1, 1, 2, 2, 4, 4, 8, 8, 4, 8, 12, 16, 64, 4, 0, 4, 8, 0, 0, 0, 0, 0, 0, 0, 1
+    0, 1, 1, 1, 2, 2, 4, 4, 8, 8, 4, 8, 12, 16, 64, 4, 0, 4, 8, 0, 0, 0, 0, 4, 0, 0, 1
 };
 
 static const char* Type_fmt[] = {
@@ -779,7 +779,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
             }
             case WADENTRYLINK:
             {
-                char* strvalue = (char*)calloc(10, 1);
+                char* strvalue = (char*)calloc(19, 1);
                 myassert(strvalue == NULL);
                 sprintf(strvalue, "0x%016" PRIX64, *(uint64_t*)value->data);
                 char* string = inputtext(strvalue, value->id);
@@ -812,15 +812,16 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
                 bool treeopen = ImGui::TreeNodeEx((void*)value->id,
                     ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth, "");
                 ImGui::SameLine(); inputtextmod(hasht, &pe->name, value->id + 1);
+                ImGui::SameLine(); ImGui::Text(": %s", Type_strings[value->typebin]);
                 ImGui::SameLine(); getarraycount(value);
                 if (treeopen)
                 {
                     for (uint16_t i = 0; i < pe->itemsize; i++)
                     {
-                        ImGui::Indent();
                         Type typi = pe->items[i]->value->typebin;
                         if ((typi >= CONTAINER && typi <= EMBEDDED) || typi == OPTION || typi == MAP)
-                        {
+                        {              
+                            ImGui::Indent();
                             ImGui::AlignTextToFramePadding();
                             bool treeopene = ImGui::TreeNodeEx((void*)(pe->items[i]->value->id - 2),
                                 ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth, "");
@@ -831,18 +832,20 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
                             {
                                 ImGui::Indent();
                                 getvaluefromtype(pe->items[i]->value, hasht);
-                                ImGui::TreePop();
                                 ImGui::Unindent();
+                                ImGui::TreePop();
                             }
+                            ImGui::Unindent();
                         }
                         else
-                        {
+                        {               
+                            ImGui::Indent();
                             inputtextmod(hasht, &pe->items[i]->key, pe->items[i]->value->id - 1);
                             ImGui::SameLine(); ImGui::Text(": %s", Type_strings[typi]);
                             ImGui::SameLine(); ImGui::Text("="); ImGui::SameLine();
                             getvaluefromtype(pe->items[i]->value, hasht);
+                            ImGui::Unindent();
                         }
-                        ImGui::Unindent();
                     }
                     ImGui::TreePop();
                 }
@@ -881,191 +884,127 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
     BinField* result = (BinField*)calloc(1, sizeof(BinField));
     myassert(result == NULL);
     result->typebin = uinttotype(typeidbin);
-    //int size = Type_size[result->typebin];
-    //if (size != 0)
-    //{
-    //    void* data = (void*)malloc(size);
-    //    myassert(data == NULL);
-    //    memfread(data, size, fp);
-    //    result->data = data;
-    //}
-    switch (result->typebin)
+    myassert(result->typebin > FLAG);
+    int size = Type_size[result->typebin];
+    if (size != 0)
     {
-        case FLAG:
-        case BOOLB:
-        case SInt8:
-        case UInt8:
+        void* data = (void*)malloc(size);
+        myassert(data == NULL);
+        memfread(data, size, fp);
+        result->data = data;
+    }
+    else
+    {
+        switch (result->typebin)
         {
-            uint8_t* data = (uint8_t*)calloc(1, 1);
-            myassert(data == NULL);
-            memfread(data, 1, fp);
-            result->data = data;
-            break;
-        }
-        case SInt16:
-        case UInt16:
-        {
-            uint16_t* data = (uint16_t*)calloc(1, 2);
-            myassert(data == NULL);
-            memfread(data, 2, fp);
-            result->data = data;
-            break;
-        }
-        case LINK:
-        case HASH:
-        case RGBA:
-        case SInt32:
-        case UInt32:
-        case Float32:
-        {
-            uint32_t* data = (uint32_t*)calloc(1, 4);
-            myassert(data == NULL);
-            memfread(data, 4, fp);
-            result->data = data;
-            break;
-        }
-        case VEC2:
-        case SInt64:
-        case UInt64:
-        case WADENTRYLINK:
-        {
-            uint64_t* data = (uint64_t*)calloc(1, 8);
-            myassert(data == NULL);
-            memfread(data, 8, fp);
-            result->data = data;
-            break;
-        }
-        case VEC3:
-        {
-            float* data = (float*)calloc(3, 4);
-            myassert(data == NULL);
-            memfread(data, 4 * 3, fp);
-            result->data = data;
-            break;
-        }
-        case VEC4:
-        {
-            float* data = (float*)calloc(4, 4);
-            myassert(data == NULL);
-            memfread(data, 4 * 4, fp);
-            result->data = data;
-            break;
-        }
-        case MTX44:
-        {
-            float* data = (float*)calloc(16, 4);
-            myassert(data == NULL);
-            memfread(data, 4 * 16, fp);
-            result->data = data;
-            break;
-        }
-        case STRING:
-        {
-            uint16_t stringlength = 0;
-            memfread(&stringlength, 2, fp);
-            char* stringb = (char*)calloc(stringlength + 1, 1);
-            myassert(stringb == NULL);
-            memfread(stringb, (size_t)stringlength, fp);
-            stringb[stringlength] = '\0';
-            result->data = stringb;
-            insertHashTable(hasht, FNV1Hash(stringb), stringb);
-            break;
-        }
-        case STRUCT:
-        case CONTAINER:
-        {
-            uint8_t type = 0;
-            uint32_t size = 0;
-            uint32_t count = 0;
-            ContainerOrStruct* tmpcs = (ContainerOrStruct*)calloc(1, sizeof(ContainerOrStruct));
-            myassert(tmpcs == NULL);
-            memfread(&type, 1, fp);
-            memfread(&size, 4, fp);
-            memfread(&count, 4, fp);
-            tmpcs->itemsize = count;
-            tmpcs->valueType = uinttotype(type);
-            tmpcs->items = (BinField**)calloc(count, sizeof(BinField**));
-            myassert(tmpcs->items == NULL);
-            for (uint32_t i = 0; i < count; i++)
-                tmpcs->items[i] = readvaluebytype(tmpcs->valueType, hasht, fp);
-            result->data = tmpcs;
-            break;
-        }
-        case POINTER:
-        case EMBEDDED:
-        {
-            uint32_t size = 0;
-            uint16_t count = 0;
-            PointerOrEmbed* tmppe = (PointerOrEmbed*)calloc(1, sizeof(PointerOrEmbed));
-            myassert(tmppe == NULL);
-            memfread(&tmppe->name, 4, fp);
-            if (tmppe->name == 0)
+            case STRING:
             {
+                uint16_t stringlength = 0;
+                memfread(&stringlength, 2, fp);
+                char* stringb = (char*)calloc(stringlength + 1, 1);
+                myassert(stringb == NULL);
+                memfread(stringb, (size_t)stringlength, fp);
+                stringb[stringlength] = '\0';
+                result->data = stringb;
+                insertHashTable(hasht, FNV1Hash(stringb), stringb);
+                break;
+            }
+            case STRUCT:
+            case CONTAINER:
+            {
+                uint8_t type = 0;
+                uint32_t size = 0;
+                uint32_t count = 0;
+                ContainerOrStruct* tmpcs = (ContainerOrStruct*)calloc(1, sizeof(ContainerOrStruct));
+                myassert(tmpcs == NULL);
+                memfread(&type, 1, fp);
+                memfread(&size, 4, fp);
+                memfread(&count, 4, fp);
+                tmpcs->itemsize = count;
+                tmpcs->valueType = uinttotype(type);
+                tmpcs->items = (BinField**)calloc(count, sizeof(BinField**));
+                myassert(tmpcs->items == NULL);
+                for (uint32_t i = 0; i < count; i++)
+                    tmpcs->items[i] = readvaluebytype(tmpcs->valueType, hasht, fp);
+                result->data = tmpcs;
+                break;
+            }
+            case POINTER:
+            case EMBEDDED:
+            {
+                uint32_t size = 0;
+                uint16_t count = 0;
+                PointerOrEmbed* tmppe = (PointerOrEmbed*)calloc(1, sizeof(PointerOrEmbed));
+                myassert(tmppe == NULL);
+                memfread(&tmppe->name, 4, fp);
+                if (tmppe->name == 0)
+                {
+                    result->data = tmppe;
+                    break;
+                }
+                memfread(&size, 4, fp);
+                memfread(&count, 2, fp);
+                tmppe->itemsize = count;
+                tmppe->items = (Field**)calloc(count, sizeof(Field**));
+                myassert(tmppe->items == NULL);
+                for (uint16_t i = 0; i < count; i++)
+                {
+                    uint8_t type = 0;
+                    Field* tmpfield = (Field*)calloc(1, sizeof(Field));
+                    myassert(tmpfield == NULL);
+                    memfread(&tmpfield->key, 4, fp);
+                    memfread(&type, 1, fp);
+                    tmpfield->value = readvaluebytype(type, hasht, fp);
+                    tmppe->items[i] = tmpfield;
+                }
                 result->data = tmppe;
                 break;
             }
-            memfread(&size, 4, fp);
-            memfread(&count, 2, fp);
-            tmppe->itemsize = count;
-            tmppe->items = (Field**)calloc(count, sizeof(Field**));
-            myassert(tmppe->items == NULL);
-            for (uint16_t i = 0; i < count; i++)
+            case OPTION:
             {
                 uint8_t type = 0;
-                Field* tmpfield = (Field*)calloc(1, sizeof(Field));
-                myassert(tmpfield == NULL);
-                memfread(&tmpfield->key, 4, fp);
+                uint8_t count = 0;
+                Option* tmpo = (Option*)calloc(1, sizeof(Option));
+                myassert(tmpo == NULL);
                 memfread(&type, 1, fp);
-                tmpfield->value = readvaluebytype(type, hasht, fp);
-                tmppe->items[i] = tmpfield;
+                memfread(&count, 1, fp);
+                tmpo->count = count;
+                tmpo->valueType = uinttotype(type);
+                tmpo->items = (BinField**)calloc(count, sizeof(BinField**));
+                myassert(tmpo->items == NULL);
+                for (uint8_t i = 0; i < count; i++)
+                    tmpo->items[i] = readvaluebytype(tmpo->valueType, hasht, fp);
+                result->data = tmpo;
+                break;
             }
-            result->data = tmppe;
-            break;
-        }
-        case OPTION:
-        {
-            uint8_t type = 0;
-            uint8_t count = 0;
-            Option* tmpo = (Option*)calloc(1, sizeof(Option));
-            myassert(tmpo == NULL);
-            memfread(&type, 1, fp);
-            memfread(&count, 1, fp);
-            tmpo->count = count;
-            tmpo->valueType = uinttotype(type);
-            tmpo->items = (BinField**)calloc(count, sizeof(BinField**));
-            myassert(tmpo->items == NULL);
-            for (uint8_t i = 0; i < count; i++)
-                tmpo->items[i] = readvaluebytype(tmpo->valueType, hasht, fp);
-            result->data = tmpo;
-            break;
-        }
-        case MAP:
-        {
-            uint32_t size = 0;
-            uint8_t typek = 0;
-            uint8_t typev = 0;
-            uint32_t count = 0;
-            Map* tmpmap = (Map*)calloc(1, sizeof(Map));
-            myassert(tmpmap == NULL);
-            memfread(&typek, 1, fp);
-            memfread(&typev, 1, fp);
-            memfread(&size, 4, fp);
-            memfread(&count, 4, fp);
-            tmpmap->itemsize = count;
-            tmpmap->keyType = uinttotype(typek);
-            tmpmap->valueType = uinttotype(typev);
-            tmpmap->items = (Pair**)calloc(count, sizeof(Pair**));
-            myassert(tmpmap->items == NULL);
-            for (uint32_t i = 0; i < count; i++)
+            case MAP:
             {
-                Pair* pairtmp = (Pair*)calloc(1, sizeof(Pair));
-                myassert(pairtmp == NULL);
-                pairtmp->key = readvaluebytype(tmpmap->keyType, hasht, fp);
-                pairtmp->value = readvaluebytype(tmpmap->valueType, hasht, fp);
-                tmpmap->items[i] = pairtmp;
+                uint32_t size = 0;
+                uint8_t typek = 0;
+                uint8_t typev = 0;
+                uint32_t count = 0;
+                Map* tmpmap = (Map*)calloc(1, sizeof(Map));
+                myassert(tmpmap == NULL);
+                memfread(&typek, 1, fp);
+                memfread(&typev, 1, fp);
+                memfread(&size, 4, fp);
+                memfread(&count, 4, fp);
+                tmpmap->itemsize = count;
+                tmpmap->keyType = uinttotype(typek);
+                tmpmap->valueType = uinttotype(typev);
+                tmpmap->items = (Pair**)calloc(count, sizeof(Pair**));
+                myassert(tmpmap->items == NULL);
+                for (uint32_t i = 0; i < count; i++)
+                {
+                    Pair* pairtmp = (Pair*)calloc(1, sizeof(Pair));
+                    myassert(pairtmp == NULL);
+                    pairtmp->key = readvaluebytype(tmpmap->keyType, hasht, fp);
+                    pairtmp->value = readvaluebytype(tmpmap->valueType, hasht, fp);
+                    tmpmap->items[i] = pairtmp;
+                }
+                result->data = tmpmap;
+                break;
             }
-            result->data = tmpmap;
-            break;
         }
     }
     return result;
