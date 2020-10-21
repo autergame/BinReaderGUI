@@ -188,7 +188,7 @@ int main()
 	pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
 	pfd.cColorBits = 32;
 	pfd.iLayerType = PFD_MAIN_PLANE;
-	pfd.cDepthBits = 8;
+	pfd.cDepthBits = 0;
 
 	HDC dummy_dc = GetDC(dummy_window);
 	int pixel_formate = ChoosePixelFormat(dummy_dc, &pfd);
@@ -228,7 +228,7 @@ int main()
 	  WGL_ACCELERATION_ARB,       WGL_FULL_ACCELERATION_ARB,
 	  WGL_PIXEL_TYPE_ARB,         WGL_TYPE_RGBA_ARB,
 	  WGL_COLOR_BITS_ARB,         32,
-	  WGL_DEPTH_BITS_ARB,         8,
+	  WGL_DEPTH_BITS_ARB,         0,
 	  WGL_STENCIL_BITS_ARB,       0,
 	  WGL_SAMPLE_BUFFERS_ARB,     GL_FALSE,
 	  WGL_SAMPLES_ARB,			  0,
@@ -334,7 +334,7 @@ int main()
 		sprintf(tmp, "BinReaderGUI - FPS: %1.0f", 1 / Deltatime);
 		SetWindowTextA(window, tmp);
 
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		glClear(GL_COLOR_BUFFER_BIT);
 
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplWin32_NewFrame();
@@ -348,7 +348,8 @@ int main()
 			if (ImGui::MenuItem("Open Bin"))
 			{
 				OPENFILENAMEA ofn;
-				ZeroMemory(&ofn, sizeof(ofn));
+				memset(szFile, 0, 260);
+				memset(&ofn, 0, sizeof(ofn));
 				ofn.lStructSize = sizeof(ofn);
 				ofn.hwndOwner = window;
 				ofn.lpstrFile = szFile;
@@ -375,7 +376,8 @@ int main()
 				if (ImGui::MenuItem("Save Bin"))
 				{
 					OPENFILENAMEA ofn;
-					ZeroMemory(&ofn, sizeof(ofn));
+					memset(szFile, 0, 260);
+					memset(&ofn, 0, sizeof(ofn));
 					ofn.lStructSize = sizeof(ofn);
 					ofn.hwndOwner = window;
 					ofn.lpstrFile = szFile;
