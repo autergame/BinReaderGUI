@@ -295,6 +295,7 @@ int main()
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.f);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 2.f);
 	ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing, GImGui->Style.FramePadding.x * 3.f - 2.5f);
+	ImGui::GetIO().Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\consola.ttf", 13);
 	int FULL_SCREEN_FLAGS = ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
 		ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_HorizontalScrollbar;
 
