@@ -149,18 +149,18 @@ uint64_t XXHash(const uint8_t* input, size_t len)
 
 struct node
 {
-    uint32_t key;
+    uint64_t key;
     char* value;
     node* next;
 };
 
 typedef struct HashTable
 {
-    uint32_t size;
+    uint64_t size;
     node** list;
 } HashTable;
 
-HashTable* createHashTable(uint32_t size)
+HashTable* createHashTable(uint64_t size)
 {
     HashTable* t = (HashTable*)malloc(sizeof(HashTable));
     myassert(t == NULL);
@@ -170,9 +170,9 @@ HashTable* createHashTable(uint32_t size)
     return t;
 }
 
-void insertHashTable(HashTable* t, uint32_t key, char* val)
+void insertHashTable(HashTable* t, uint64_t key, char* val)
 {
-    uint32_t pos = key % t->size;
+    uint64_t pos = key % t->size;
     node* list = t->list[pos];
     node* newNode = (node*)malloc(sizeof(node));
     myassert(newNode == NULL);
@@ -190,7 +190,7 @@ void insertHashTable(HashTable* t, uint32_t key, char* val)
     t->list[pos] = newNode;
 }
 
-char* lookupHashTable(HashTable* t, uint32_t key)
+char* lookupHashTable(HashTable* t, uint64_t key)
 {
     node* list = t->list[key % t->size];
     node* temp = list;
@@ -267,8 +267,8 @@ typedef enum Type
 
 static const char* Type_strings[] = {
     "None", "Bool", "SInt8", "UInt8", "SInt16", "UInt16", "SInt32", "UInt32", "SInt64",
-    "UInt64", "Float32", "Vector2", "Vector3", "Vector4", "Matrix4x4", "RGBA", "String",
-    "Hash", "WadEntryLink", "Container", "Struct", "Pointer", "Embedded", "Link", "Option", "Map", "Flag"
+    "UInt64", "Float32", "Vector2", "Vector3", "Vector4", "Matrix4x4", "RGBA", "String", "Hash",
+    "WadEntryLink", "Container", "Struct", "Pointer", "Embedded", "Link", "Option", "Map", "Flag"
 };
 
 static const int Type_size[] = {
@@ -354,6 +354,18 @@ char* hashtostr(HashTable* hasht, uint32_t value)
     return strvalue;
 }
 
+char* hashtostrxx(HashTable* hasht, uint64_t value)
+{
+    char* strvalue = lookupHashTable(hasht, value);
+    if (strvalue == NULL)
+    {
+        strvalue = (char*)calloc(19, 1);
+        myassert(strvalue == NULL);
+        sprintf(strvalue, "0x%16" PRIX64, value);
+    }
+    return strvalue;
+}
+
 uint32_t hashfromstring(char* string)
 {
     uint32_t hash = 0;
@@ -424,18 +436,6 @@ void floatarray(void* data, int size, uintptr_t id)
     float* arr = (float*)data;
     for (int i = 0; i < size; i++)
     {
-        if (size == 16)
-        {
-            if (i % 4 == 0)
-            {
-                ImGui::NewLine();
-                ImGui::SameLine(indent);
-            }
-            else
-                ImGui::SameLine();
-        }
-        else
-            ImGui::SameLine();
         uint8_t havepoint = 0;
         char* buf = (char*)calloc(64, 1);
         myassert(buf == NULL);
@@ -448,6 +448,18 @@ void floatarray(void* data, int size, uintptr_t id)
         char* string = inputtext(buf, id + i);
         if (string != NULL)
             sscanf(string, "%g", &arr[i]);
+        if (size == 16)
+        {
+            if ((i+1) % 4 == 0)
+            {
+                ImGui::NewLine();
+                ImGui::SameLine(indent);
+            }
+            else if (i < size - 1)
+                ImGui::SameLine();
+        }
+        else if (i < size - 1)
+            ImGui::SameLine();
         free(string);
         free(buf);
     }
@@ -494,20 +506,19 @@ void getarraytype(BinField* value)
         case STRUCT:
         {
             ContainerOrStruct* cs = (ContainerOrStruct*)value->data;
-            ImGui::SameLine(0, 1); ImGui::Text("[%s]", Type_strings[cs->valueType]);
+            ImGui::Text("[%s]", Type_strings[cs->valueType]);
             break;
         }
         case OPTION:
         {
             Option* op = (Option*)value->data;
-            ImGui::SameLine(0, 1); ImGui::Text("[%s]", Type_strings[op->valueType]);
+            ImGui::Text("[%s]", Type_strings[op->valueType]);
             break;
         }
         case MAP:
         {
             Map* mp = (Map*)value->data;
-            ImGui::SameLine(0, 1); ImGui::Text("[%s,%s]",
-                Type_strings[mp->keyType], Type_strings[mp->valueType]);
+            ImGui::Text("[%s,%s]", Type_strings[mp->keyType], Type_strings[mp->valueType]);
             break;
         }
     }
@@ -581,7 +592,11 @@ void getstructidbin(BinField* value, uintptr_t* tree)
         {        
             ContainerOrStruct* cs = (ContainerOrStruct*)value->data;
             for (uint32_t i = 0; i < cs->itemsize; i++)
+            {
+                if (cs->valueType == CONTAINER || cs->valueType == STRUCT || cs->valueType == OPTION || cs->valueType == MAP)
+                    *tree += 1;
                 getstructidbin(cs->items[i], tree);
+            }
             break;
         }
         case POINTER:
@@ -589,21 +604,28 @@ void getstructidbin(BinField* value, uintptr_t* tree)
         {
             *tree += 1;
             PointerOrEmbed* pe = (PointerOrEmbed*)value->data;
-            for (uint16_t i = 0; i < pe->itemsize; i++)
+            if (pe->name != 0)
             {
-                *tree += 1;
-                Type typi = pe->items[i]->value->typebin;
-                if ((typi >= CONTAINER && typi <= EMBEDDED) || typi == OPTION || typi == MAP)
+                for (uint16_t i = 0; i < pe->itemsize; i++)
+                {
                     *tree += 1;
-                getstructidbin(pe->items[i]->value, tree);
-            }           
+                    Type typi = pe->items[i]->value->typebin;
+                    if ((typi >= CONTAINER && typi <= EMBEDDED) || typi == OPTION || typi == MAP)
+                        *tree += 1;
+                    getstructidbin(pe->items[i]->value, tree);
+                }
+            }
             break;
         }
         case OPTION:
         {
             Option* op = (Option*)value->data;
             for (uint8_t i = 0; i < op->count; i++)
+            {
+                if (op->valueType == CONTAINER || op->valueType == STRUCT || op->valueType == OPTION || op->valueType == MAP)
+                    *tree += 1;
                 getstructidbin(op->items[i], tree);
+            }
             break;
         }
         case MAP:
@@ -611,7 +633,11 @@ void getstructidbin(BinField* value, uintptr_t* tree)
             Map* mp = (Map*)value->data;
             for (uint32_t i = 0; i < mp->itemsize; i++)
             {
+                if (mp->keyType == CONTAINER || mp->keyType == STRUCT || mp->keyType == OPTION || mp->keyType == MAP)
+                    *tree += 1;
                 getstructidbin(mp->items[i]->key, tree);
+                if (mp->valueType == CONTAINER || mp->valueType == STRUCT || mp->valueType == OPTION || mp->valueType == MAP)
+                    *tree += 1;
                 getstructidbin(mp->items[i]->value, tree);
             }
             break;
@@ -619,7 +645,7 @@ void getstructidbin(BinField* value, uintptr_t* tree)
     }
 }
 
-void getvaluefromtype(BinField* value, HashTable* hasht)
+void getvaluefromtype(BinField* value, HashTable* hasht, HashTable* hashx, ImGuiTreeNodeFlags flags)
 {
     const char* fmt = Type_fmt[value->typebin];
     if (fmt != NULL)
@@ -698,34 +724,65 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
                 if (string != NULL)
                 {
                     uint32_t data = hashfromstring(string);
-                    memcpy(value->data, &data, 4);
-                    free(string);
+                    myassert(memcpy(value->data, &data, 4) == NULL);
+                    if(hashtostr(hasht, data) == NULL)
+                        insertHashTable(hasht, data, string);
                 }
                 break;
             }
             case WADENTRYLINK:
             {
-                char* strvalue = (char*)calloc(19, 1);
-                myassert(strvalue == NULL);
-                sprintf(strvalue, "0x%016" PRIX64, *(uint64_t*)value->data);
-                char* string = inputtext(strvalue, value->id);
+                char* string = inputtext(hashtostrxx(hashx, *(uint64_t*)value->data), value->id);
                 if (string != NULL)
                 {
                     uint64_t data = hashfromstringxx(string);
-                    memcpy(value->data, &data, 8);
-                    free(string);
+                    myassert(memcpy(value->data, &data, 8) == NULL);
+                    if(hashtostrxx(hasht, data) == NULL)
+                        insertHashTable(hashx, data, string);
                 }
-                free(strvalue);
                 break;
             }
             case CONTAINER:
             case STRUCT:
             {
                 ContainerOrStruct* cs = (ContainerOrStruct*)value->data;
-                for (uint32_t i = 0; i < cs->itemsize; i++)
+                if (cs->itemsize != 0)
+                {
+                    if (cs->valueType == CONTAINER || cs->valueType == STRUCT || cs->valueType == OPTION || cs->valueType == MAP)
+                    {
+                        for (uint32_t i = 0; i < cs->itemsize; i++)
+                        {
+                            ImGui::Indent();
+                            ImGui::AlignTextToFramePadding();
+                            bool treeopen = ImGui::TreeNodeEx((void*)(cs->items[i]->id - 1),
+                                ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth | flags, "");
+                            ImGui::SameLine(); ImGui::Text("%s", Type_strings[cs->valueType]);
+                            ImGui::SameLine(0, 1); getarraytype(cs->items[i]);
+                            ImGui::SameLine(); getarraycount(cs->items[i]);
+                            if (treeopen)
+                            {
+                                ImGui::Indent();
+                                getvaluefromtype(cs->items[i], hasht, hashx, flags);
+                                ImGui::Unindent();
+                                ImGui::TreePop();
+                            }
+                            ImGui::Unindent();
+                        }
+                    }
+                    else
+                    {
+                        for (uint32_t i = 0; i < cs->itemsize; i++)
+                        {
+                            ImGui::Indent();
+                            getvaluefromtype(cs->items[i], hasht, hashx, flags);
+                            ImGui::Unindent();
+                        }
+                    }
+                }
+                else
                 {
                     ImGui::Indent();
-                    getvaluefromtype(cs->items[i], hasht);
+                    ImGui::Text("Null");
                     ImGui::Unindent();
                 }
                 break;
@@ -733,57 +790,98 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
             case POINTER:
             case EMBEDDED:
             {
-                ImGui::AlignTextToFramePadding();
                 PointerOrEmbed* pe = (PointerOrEmbed*)value->data;
-                bool treeopen = ImGui::TreeNodeEx((void*)value->id,
-                    ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth, "");
-                ImGui::SameLine(); inputtextmod(hasht, &pe->name, value->id + 1);
-                ImGui::SameLine(); ImGui::Text(": %s", Type_strings[value->typebin]);
-                ImGui::SameLine(); getarraycount(value);
-                if (treeopen)
+                if (pe->name != 0)
                 {
-                    for (uint16_t i = 0; i < pe->itemsize; i++)
+                    ImGui::AlignTextToFramePadding();
+                    bool treeopen = ImGui::TreeNodeEx((void*)value->id,
+                        ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth | flags, "");
+                    ImGui::SameLine(); inputtextmod(hasht, &pe->name, value->id + 1);
+                    ImGui::SameLine(); ImGui::Text(": %s", Type_strings[value->typebin]);
+                    ImGui::SameLine(); getarraycount(value);
+                    if (treeopen)
                     {
-                        Type typi = pe->items[i]->value->typebin;
-                        if ((typi >= CONTAINER && typi <= EMBEDDED) || typi == OPTION || typi == MAP)
-                        {              
-                            ImGui::Indent();
-                            ImGui::AlignTextToFramePadding();
-                            bool treeopene = ImGui::TreeNodeEx((void*)(pe->items[i]->value->id - 2),
-                                ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth, "");
-                            ImGui::SameLine(); inputtextmod(hasht, &pe->items[i]->key, pe->items[i]->value->id - 1);
-                            ImGui::SameLine(); ImGui::Text(": %s", Type_strings[typi]); getarraytype(pe->items[i]->value);
-                            ImGui::SameLine(); getarraycount(pe->items[i]->value);
-                            if (treeopene)
+                        for (uint16_t i = 0; i < pe->itemsize; i++)
+                        {
+                            Type typi = pe->items[i]->value->typebin;
+                            if ((typi >= CONTAINER && typi <= EMBEDDED) || typi == OPTION || typi == MAP)
                             {
                                 ImGui::Indent();
-                                getvaluefromtype(pe->items[i]->value, hasht);
+                                ImGui::AlignTextToFramePadding();
+                                bool treeopene = ImGui::TreeNodeEx((void*)(pe->items[i]->value->id - 2),
+                                    ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth | flags, "");
+                                ImGui::SameLine(); inputtextmod(hasht, &pe->items[i]->key, pe->items[i]->value->id - 1);
+                                ImGui::SameLine(); ImGui::Text(": %s", Type_strings[typi]);
+                                ImGui::SameLine(0, 1); getarraytype(pe->items[i]->value);
+                                ImGui::SameLine(); getarraycount(pe->items[i]->value);
+                                if (treeopene)
+                                {
+                                    ImGui::Indent();
+                                    getvaluefromtype(pe->items[i]->value, hasht, hashx, flags);
+                                    ImGui::Unindent();
+                                    ImGui::TreePop();
+                                }
                                 ImGui::Unindent();
-                                ImGui::TreePop();
                             }
-                            ImGui::Unindent();
+                            else
+                            {
+                                ImGui::Indent();
+                                inputtextmod(hasht, &pe->items[i]->key, pe->items[i]->value->id - 1);
+                                ImGui::SameLine(); ImGui::Text(": %s", Type_strings[typi]);
+                                ImGui::SameLine(); ImGui::Text("="); ImGui::SameLine();
+                                getvaluefromtype(pe->items[i]->value, hasht, hashx, flags);
+                                ImGui::Unindent();
+                            }
                         }
-                        else
-                        {               
-                            ImGui::Indent();
-                            inputtextmod(hasht, &pe->items[i]->key, pe->items[i]->value->id - 1);
-                            ImGui::SameLine(); ImGui::Text(": %s", Type_strings[typi]);
-                            ImGui::SameLine(); ImGui::Text("="); ImGui::SameLine();
-                            getvaluefromtype(pe->items[i]->value, hasht);
-                            ImGui::Unindent();
-                        }
+                        ImGui::TreePop();
                     }
-                    ImGui::TreePop();
+                }
+                else
+                {
+                    ImGui::Text("Pointer Null");
                 }
                 break;
             }
             case OPTION:
             {
                 Option* op = (Option*)value->data;
-                for (uint8_t i = 0; i < op->count; i++)
+                if (op->count != 0)
+                {
+                    if (op->valueType == CONTAINER || op->valueType == STRUCT || op->valueType == OPTION || op->valueType == MAP)
+                    {
+                        for (uint32_t i = 0; i < op->count; i++)
+                        {
+                            ImGui::Indent();
+                            ImGui::AlignTextToFramePadding();
+                            bool treeopen = ImGui::TreeNodeEx((void*)(op->items[i]->id - 1),
+                                ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth | flags, "");
+                            ImGui::SameLine(); ImGui::Text("%s", Type_strings[op->valueType]);
+                            ImGui::SameLine(0, 1); getarraytype(op->items[i]);
+                            ImGui::SameLine(); getarraycount(op->items[i]);
+                            if (treeopen)
+                            {
+                                ImGui::Indent();
+                                getvaluefromtype(op->items[i], hasht, hashx, flags);
+                                ImGui::Unindent();
+                                ImGui::TreePop();
+                            }
+                            ImGui::Unindent();
+                        }
+                    }
+                    else
+                    {
+                        for (uint32_t i = 0; i < op->count; i++)
+                        {
+                            ImGui::Indent();
+                            getvaluefromtype(op->items[i], hasht, hashx, flags);
+                            ImGui::Unindent();
+                        }
+                    }
+                }
+                else
                 {
                     ImGui::Indent();
-                    getvaluefromtype(op->items[i], hasht);
+                    ImGui::Text("Null");
                     ImGui::Unindent();
                 }
                 break;
@@ -791,12 +889,59 @@ void getvaluefromtype(BinField* value, HashTable* hasht)
             case MAP:
             {
                 Map* mp = (Map*)value->data;
-                for (uint32_t i = 0; i < mp->itemsize; i++)
+                if (mp->itemsize != 0)
+                {
+                    for (uint32_t i = 0; i < mp->itemsize; i++)
+                    {
+                        ImGui::Indent();
+                        if (mp->keyType == CONTAINER || mp->keyType == STRUCT || mp->keyType == OPTION || mp->keyType == MAP)
+                        {
+                            ImGui::AlignTextToFramePadding();
+                            bool treeopen = ImGui::TreeNodeEx((void*)(mp->items[i]->key->id - 1),
+                                ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth | flags, "");
+                            ImGui::SameLine(); ImGui::Text("%s", Type_strings[mp->keyType]);
+                            ImGui::SameLine(0, 1); getarraytype(mp->items[i]->key);
+                            ImGui::SameLine(); getarraycount(mp->items[i]->key);
+                            if (treeopen)
+                            {
+                                ImGui::Indent();
+                                getvaluefromtype(mp->items[i]->key, hasht, hashx, flags);
+                                ImGui::Unindent();
+                                ImGui::TreePop();
+                            }
+                        }
+                        else
+                        {
+                            getvaluefromtype(mp->items[i]->key, hasht, hashx, flags);
+                        }
+                        ImGui::SameLine(); ImGui::Text(":"); ImGui::SameLine();
+                        if (mp->valueType == CONTAINER || mp->valueType == STRUCT || mp->valueType == OPTION || mp->valueType == MAP)
+                        {
+                            ImGui::AlignTextToFramePadding();
+                            bool treeopen = ImGui::TreeNodeEx((void*)(mp->items[i]->value->id - 1),
+                                ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth | flags, "");
+                            ImGui::SameLine(); ImGui::Text("%s", Type_strings[mp->valueType]);
+                            ImGui::SameLine(0, 1); getarraytype(mp->items[i]->value);
+                            ImGui::SameLine(); getarraycount(mp->items[i]->value);
+                            if (treeopen)
+                            {
+                                ImGui::Indent();
+                                getvaluefromtype(mp->items[i]->value, hasht, hashx, flags);
+                                ImGui::Unindent();
+                                ImGui::TreePop();
+                            }
+                        }
+                        else
+                        {
+                            getvaluefromtype(mp->items[i]->value, hasht, hashx, flags);
+                        }
+                        ImGui::Unindent();
+                    }
+                }
+                else
                 {
                     ImGui::Indent();
-                    getvaluefromtype(mp->items[i]->key, hasht);
-                    ImGui::SameLine(); ImGui::Text(":"); ImGui::SameLine();
-                    getvaluefromtype(mp->items[i]->value, hasht);
+                    ImGui::Text("Null");
                     ImGui::Unindent();
                 }
                 break;
@@ -865,6 +1010,7 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
                 memfread(&tmppe->name, 4, fp);
                 if (tmppe->name == 0)
                 {
+                    tmppe->itemsize = 1;
                     result->data = tmppe;
                     break;
                 }

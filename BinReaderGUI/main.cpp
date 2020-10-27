@@ -301,6 +301,7 @@ int main()
 
 	printf("loading hashes.\n");
 	HashTable* hasht = createHashTable(1000000);
+	HashTable* hashx = createHashTable(1000);
 	addhash(hasht, "hashes.bintypes.txt");
 	addhash(hasht, "hashes.binfields.txt");
 	addhash(hasht, "hashes.binhashes.txt");
@@ -308,8 +309,11 @@ int main()
 	printf("finised loading hashes.\n");
 
 	MSG msg = { 0 };
+	bool openclose = false;
+	ImGuiTreeNodeFlags flags;
 	uintptr_t treebefore = 0;
-	char szFile[260] = { 0 };
+	char openfile[260] = { 0 };
+	char savefile[260] = { 0 };
 	PacketBin* packet = NULL;
 	ShowWindow(window, TRUE);
 	UpdateWindow(window);
@@ -349,12 +353,12 @@ int main()
 			if (ImGui::MenuItem("Open Bin"))
 			{
 				OPENFILENAMEA ofn;
-				memset(szFile, 0, 260);
+				memset(openfile, 0, 260);
 				memset(&ofn, 0, sizeof(ofn));
 				ofn.lStructSize = sizeof(ofn);
 				ofn.hwndOwner = window;
-				ofn.lpstrFile = szFile;
-				ofn.nMaxFile = sizeof(szFile);
+				ofn.lpstrFile = openfile;
+				ofn.nMaxFile = 260;
 				ofn.lpstrFilter = "*.bin\0";
 				ofn.nFilterIndex = 1;
 				ofn.lpstrFileTitle = NULL;
@@ -366,23 +370,25 @@ int main()
 					treebefore = 0;
 					if (packet != NULL)
 						cleanbin(packet->entriesMap);
-					packet = decode(szFile, hasht);
-					myassert(packet == NULL);
-					ImGui::GetStateStorage()->Clear();
-					getstructidbin(packet->entriesMap, &treebefore);
+					packet = decode(openfile, hasht);
+					if (packet != NULL)
+					{
+						ImGui::GetStateStorage()->Clear();
+						getstructidbin(packet->entriesMap, &treebefore);
+					}
 				}
 			}
-			if (szFile[0] != 0 && packet != NULL)
+			if (openfile[0] != 0 && packet != NULL)
 			{
 				if (ImGui::MenuItem("Save Bin"))
 				{
 					OPENFILENAMEA ofn;
-					memset(szFile, 0, 260);
+					memset(savefile, 0, 260);
 					memset(&ofn, 0, sizeof(ofn));
 					ofn.lStructSize = sizeof(ofn);
 					ofn.hwndOwner = window;
-					ofn.lpstrFile = szFile;
-					ofn.nMaxFile = sizeof(szFile);
+					ofn.lpstrFile = savefile;
+					ofn.nMaxFile = 260;
 					ofn.lpstrFilter = "*.bin\0";
 					ofn.nFilterIndex = 1;
 					ofn.lpstrFileTitle = NULL;
@@ -390,21 +396,26 @@ int main()
 					ofn.lpstrInitialDir = NULL;
 					ofn.Flags = OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
 					if (GetSaveFileNameA(&ofn) == TRUE)
-					{
-						encode(szFile, packet);
-					}
+						encode(savefile, packet);
 				}
+				if (ImGui::MenuItem("Open/Close All Tree Nodes"))
+					openclose = !openclose;
 			}
 			ImGui::EndMenuBar();
 		}
-		if (szFile[0] != 0 && packet != NULL)
+		if (openfile[0] != 0 && packet != NULL)
 		{
 			ImGui::AlignTextToFramePadding();
-			bool treeope = ImGui::TreeNodeEx((void*)0, ImGuiTreeNodeFlags_SpanFullWidth, "");
-			ImGui::SameLine(); ImGui::Text(szFile);
-			if (treeope)
+			bool treeopen = ImGui::TreeNodeEx((void*)0,
+				ImGuiTreeNodeFlags_SpanFullWidth | ImGuiTreeNodeFlags_DefaultOpen, "");
+			ImGui::SameLine(); ImGui::Text(openfile);
+			if (treeopen)
 			{
-				getvaluefromtype(packet->entriesMap, hasht);
+				if (openclose)
+					flags = ImGuiTreeNodeFlags_DefaultOpen;
+				else
+					flags = 0;
+				getvaluefromtype(packet->entriesMap, hasht, hashx, flags);
 				ImGui::TreePop();
 			}
 		}
