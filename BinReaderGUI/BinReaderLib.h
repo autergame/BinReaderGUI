@@ -1,6 +1,11 @@
 //author https://github.com/autergame
-#pragma once
 #define _CRT_SECURE_NO_WARNINGS
+#pragma comment(lib, "opengl32")
+#include "libs/glad/glad.h"
+#include "libs/imgui/imgui.h"
+#include "libs/imgui/imgui_impl_win32.h"
+#include "libs/imgui/imgui_impl_opengl3.h"
+#include "libs/imgui/imgui_internal.h"
 #include <inttypes.h>
 #include <string.h>
 #include <stdio.h>
@@ -165,7 +170,7 @@ HashTable* createHashTable(uint64_t size)
     HashTable* t = (HashTable*)malloc(sizeof(HashTable));
     myassert(t == NULL);
     t->size = size;
-    t->list = (node**)calloc(size, sizeof(node**));
+    t->list = (node**)calloc(size, sizeof(node*));
     myassert(t->list == NULL);
     return t;
 }
@@ -993,7 +998,7 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
                 memfread(&count, 4, fp);
                 tmpcs->itemsize = count;
                 tmpcs->valueType = uinttotype(type);
-                tmpcs->items = (BinField**)calloc(count, sizeof(BinField**));
+                tmpcs->items = (BinField**)calloc(count, sizeof(BinField*));
                 myassert(tmpcs->items == NULL);
                 for (uint32_t i = 0; i < count; i++)
                     tmpcs->items[i] = readvaluebytype(tmpcs->valueType, hasht, fp);
@@ -1017,7 +1022,7 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
                 memfread(&size, 4, fp);
                 memfread(&count, 2, fp);
                 tmppe->itemsize = count;
-                tmppe->items = (Field**)calloc(count, sizeof(Field**));
+                tmppe->items = (Field**)calloc(count, sizeof(Field*));
                 myassert(tmppe->items == NULL);
                 for (uint16_t i = 0; i < count; i++)
                 {
@@ -1042,7 +1047,7 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
                 memfread(&count, 1, fp);
                 tmpo->count = count;
                 tmpo->valueType = uinttotype(type);
-                tmpo->items = (BinField**)calloc(count, sizeof(BinField**));
+                tmpo->items = (BinField**)calloc(count, sizeof(BinField*));
                 myassert(tmpo->items == NULL);
                 for (uint8_t i = 0; i < count; i++)
                     tmpo->items[i] = readvaluebytype(tmpo->valueType, hasht, fp);
@@ -1064,7 +1069,7 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
                 tmpmap->itemsize = count;
                 tmpmap->keyType = uinttotype(typek);
                 tmpmap->valueType = uinttotype(typev);
-                tmpmap->items = (Pair**)calloc(count, sizeof(Pair**));
+                tmpmap->items = (Pair**)calloc(count, sizeof(Pair*));
                 myassert(tmpmap->items == NULL);
                 for (uint32_t i = 0; i < count; i++)
                 {
@@ -1260,7 +1265,7 @@ typedef struct PacketBin
 
 PacketBin* decode(char* filepath, HashTable* hasht)
 {
-    PacketBin* packet = (PacketBin*)calloc(1, sizeof(PacketBin*));
+    PacketBin* packet = (PacketBin*)calloc(1, sizeof(PacketBin));
     myassert(packet == NULL);
     FILE* file = fopen(filepath, "rb");
     if (!file)
@@ -1312,7 +1317,7 @@ PacketBin* decode(char* filepath, HashTable* hasht)
         memfread(&linkedFilesCount, 4, &fp);
         if (linkedFilesCount > 0)
         {
-            char** LinkedListt = (char**)calloc(linkedFilesCount, sizeof(char**));
+            char** LinkedListt = (char**)calloc(linkedFilesCount, sizeof(char*));
             myassert(LinkedListt == NULL);
             for (uint32_t i = 0; i < linkedFilesCount; i++) {
                 memfread(&stringlength, 2, &fp);
@@ -1339,7 +1344,7 @@ PacketBin* decode(char* filepath, HashTable* hasht)
     entriesMap->keyType = HASH;
     entriesMap->valueType = EMBEDDED;
     entriesMap->itemsize = entryCount;
-    entriesMap->items = (Pair**)calloc(entryCount, sizeof(Pair**));
+    entriesMap->items = (Pair**)calloc(entryCount, sizeof(Pair*));
     myassert(entriesMap->items == NULL);
     for (size_t i = 0; i < entryCount; i++)
     {
@@ -1356,7 +1361,7 @@ PacketBin* decode(char* filepath, HashTable* hasht)
         myassert(entry == NULL);
         entry->itemsize = fieldcount;
         entry->name = entryTypes[i];
-        entry->items = (Field**)calloc(fieldcount, sizeof(Field**));
+        entry->items = (Field**)calloc(fieldcount, sizeof(Field*));
         myassert(entry->items == NULL);
         for (uint16_t o = 0; o < fieldcount; o++)
         {

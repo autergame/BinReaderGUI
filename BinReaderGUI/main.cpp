@@ -1,14 +1,6 @@
 //author https://github.com/autergame
-#define _CRT_SECURE_NO_WARNINGS
-#pragma comment(lib, "opengl32")
-#include "libs/glad/glad.h"
-#include "libs/imgui/imgui.h"
-#include "libs/imgui/imgui_impl_win32.h"
-#include "libs/imgui/imgui_impl_opengl3.h"
-#include "libs/imgui/imgui_internal.h"
 #include "BinReaderLib.h"
 #include <windows.h>
-
 
 typedef HGLRC WINAPI wglCreateContextAttribsARB_type(HDC hdc, HGLRC hShareContext,
 	const int* attribList);
@@ -310,7 +302,6 @@ int main()
 
 	MSG msg = { 0 };
 	bool openclose = false;
-	ImGuiTreeNodeFlags flags;
 	uintptr_t treebefore = 0;
 	char openfile[260] = { 0 };
 	char savefile[260] = { 0 };
@@ -319,7 +310,7 @@ int main()
 	UpdateWindow(window);
 	HDC gldc = GetDC(window);
 	float Deltatime = 0, Lastedtime = 0;
-	char* tmp = (char*)calloc(1, 64);
+	char* tmp = (char*)calloc(64, 1);
 	myassert(tmp == NULL);
 	while (active)
 	{
@@ -411,11 +402,8 @@ int main()
 			ImGui::SameLine(); ImGui::Text(openfile);
 			if (treeopen)
 			{
-				if (openclose)
-					flags = ImGuiTreeNodeFlags_DefaultOpen;
-				else
-					flags = 0;
-				getvaluefromtype(packet->entriesMap, hasht, hashx, flags);
+				getvaluefromtype(packet->entriesMap, hasht, hashx,
+					openclose ? ImGuiTreeNodeFlags_DefaultOpen : 0);
 				ImGui::TreePop();
 			}
 		}
