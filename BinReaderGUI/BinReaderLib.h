@@ -1,11 +1,11 @@
 //author https://github.com/autergame
 #define _CRT_SECURE_NO_WARNINGS
 #pragma comment(lib, "opengl32")
-#include "libs/glad/glad.h"
-#include "libs/imgui/imgui.h"
-#include "libs/imgui/imgui_impl_win32.h"
-#include "libs/imgui/imgui_impl_opengl3.h"
-#include "libs/imgui/imgui_internal.h"
+#include <glad/glad.h>
+#include <imgui/imgui.h>
+#include <imgui/imgui_impl_win32.h>
+#include <imgui/imgui_impl_opengl3.h>
+#include <imgui/imgui_internal.h>
 #include <inttypes.h>
 #include <string.h>
 #include <stdio.h>
@@ -19,6 +19,8 @@ void _assert(char const* msg, char const* file, unsigned line)
     exit(1);
 }
 #define myassert(expression) if (expression) { _assert(#expression, __FILE__, __LINE__); }
+
+#pragma region FNV1Hash XXHash HashTable 
 
 uint32_t FNV1Hash(char* str)
 {
@@ -227,12 +229,16 @@ int addhash(HashTable* map, const char* filename)
     char* hashend;
     char* hashline = strtok(fp, "\n");
     while (hashline != NULL) {
-        uint32_t key = strtoul(hashline, &hashend, 16);
+        uint64_t key = strtoul(hashline, &hashend, 16);
         insertHashTable(map, key, hashend + 1);
         hashline = strtok(NULL, "\n");
     }
     return 0;
 }
+
+#pragma endregion
+
+#pragma region charv memfwrite memfread
 
 typedef struct charv
 {
@@ -257,6 +263,10 @@ void memfread(void* buf, size_t bytes, char** membuf)
     *membuf += bytes;
 }
 
+#pragma endregion
+
+#pragma region BinStructures
+
 typedef enum Type
 {
     NONE, BOOLB, SInt8,
@@ -269,6 +279,79 @@ typedef enum Type
     POINTER, EMBEDDED, LINK,
     OPTION, MAP, FLAG
 } Type;
+
+typedef struct BinField
+{
+    uintptr_t id;
+    Type typebin;
+    void* data;
+} BinField;
+
+typedef struct Pair
+{
+    uintptr_t id1;
+    uintptr_t id2;
+    BinField* key;
+    BinField* value;
+} Pair;
+
+typedef struct Field
+{
+    uintptr_t id1;
+    uintptr_t id2;
+    uint32_t key;
+    BinField* value;
+} Field;
+
+typedef struct IdField
+{
+    uintptr_t id;
+    BinField* value;
+} IdField;
+
+typedef struct ContainerOrStruct
+{
+    int current2;
+    int current3;
+    Type valueType;
+    IdField** items;
+    uint32_t itemsize;
+} ContainerOrStruct;
+
+typedef struct PointerOrEmbed
+{
+    int current1;
+    int current2;
+    int current3;
+    uint32_t name;
+    Field** items;
+    uint16_t itemsize;
+} PointerOrEmbed;
+
+typedef struct Option
+{
+    int current2;
+    int current3;
+    uint8_t count;
+    Type valueType;
+    IdField** items;
+} Option;
+
+typedef struct Map
+{
+    int current2;
+    int current3;
+    int current4;
+    int current5;
+    Type keyType;
+    Type valueType;
+    Pair** items;
+    uint32_t itemsize;
+} Map;
+
+#pragma endregion
+
+#pragma region BinTypes uinttotype typetouint
 
 static const char* Type_strings[] = {
     "None", "Bool", "SInt8", "UInt8", "SInt16", "UInt16", "SInt32", "UInt32", "SInt64",
@@ -285,12 +368,19 @@ static const char* Type_fmt[] = {
     NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
 };
 
+static const int Type_sizeclean[] = {
+    1, 1, 1, 1, 2, 2, 4, 4, 8, 8, 4, 8, 12, 16, 64, 4, 1, 4, 8,
+    sizeof(ContainerOrStruct), sizeof(ContainerOrStruct),
+    sizeof(PointerOrEmbed), sizeof(PointerOrEmbed), 4, sizeof(Option), sizeof(Map), 1
+};
+
 Type uinttotype(uint8_t type)
 {
     if (type & 0x80)
         type = (type - 0x80) + CONTAINER;
     return (Type)type;
 }
+
 uint8_t typetouint(Type type)
 {
     uint8_t raw = type;
@@ -299,53 +389,9 @@ uint8_t typetouint(Type type)
     return raw;
 }
 
-typedef struct BinField
-{
-    uintptr_t id;
-    Type typebin;
-    void* data;
-} BinField;
+#pragma endregion
 
-typedef struct Pair
-{
-    BinField* key;
-    BinField* value;
-} Pair;
-
-typedef struct Field
-{
-    uint32_t key;
-    BinField* value;
-} Field;
-
-typedef struct ContainerOrStruct
-{
-    Type valueType;
-    BinField** items;
-    uint32_t itemsize;
-} ContainerOrStruct;
-
-typedef struct PointerOrEmbed
-{
-    uint32_t name;
-    Field** items;
-    uint16_t itemsize;
-} PointerOrEmbed;
-
-typedef struct Option
-{
-    uint8_t count;
-    Type valueType;
-    BinField** items;
-} Option;
-
-typedef struct Map
-{
-    Type keyType;
-    Type valueType;
-    Pair** items;
-    uint32_t itemsize;
-} Map;
+#pragma region BinTextsHandlers
 
 char* hashtostr(HashTable* hasht, uint32_t value)
 {
@@ -354,7 +400,7 @@ char* hashtostr(HashTable* hasht, uint32_t value)
     {
         strvalue = (char*)calloc(11, 1);
         myassert(strvalue == NULL);
-        sprintf(strvalue, "0x%08" PRIX32, value);
+        myassert(sprintf(strvalue, "0x%08" PRIX32, value) < 0);
     }
     return strvalue;
 }
@@ -366,29 +412,9 @@ char* hashtostrxx(HashTable* hasht, uint64_t value)
     {
         strvalue = (char*)calloc(19, 1);
         myassert(strvalue == NULL);
-        sprintf(strvalue, "0x%16" PRIX64, value);
+        myassert(sprintf(strvalue, "0x%016" PRIX64, value) < 0);
     }
     return strvalue;
-}
-
-uint32_t hashfromstring(char* string)
-{
-    uint32_t hash = 0;
-    if (string[0] == '0' && string[1] == 'x')
-        hash = strtoul(string, NULL, 16);
-    else
-        hash = FNV1Hash(string);
-    return hash;
-}
-
-uint64_t hashfromstringxx(char* string)
-{
-    uint64_t hash = 0;
-    if (string[0] == '0' && string[1] == 'x')
-        hash = strtoull(string, NULL, 16);
-    else
-        hash = XXHash((const uint8_t*)string, strlen(string));
-    return hash;
 }
 
 static int MyResizeCallback(ImGuiInputTextCallbackData* data)
@@ -405,7 +431,7 @@ static int MyResizeCallback(ImGuiInputTextCallbackData* data)
     return 0;
 }
 
-char* inputtext(const char* inner, uintptr_t id)
+char* inputtext(const char* inner, uintptr_t id, char* stringf = NULL)
 {
     ImGui::PushID((void*)id);
     size_t size = strlen(inner) + 1;
@@ -414,9 +440,14 @@ char* inputtext(const char* inner, uintptr_t id)
     myassert(memcpy(string, inner, size) == NULL);
     char** prot = (char**)calloc(1, sizeof(char*)); 
     myassert(prot == NULL); *prot = string;
-    ImGui::SetNextItemWidth(ImGui::CalcTextSize(string, NULL, true).x + GImGui->Style.FramePadding.x * 8.f);
-    bool ret = ImGui::InputText("", string, size, ImGuiInputTextFlags_CallbackResize, MyResizeCallback, (void*)prot);
+    float sized = ImGui::CalcTextSize(stringf == NULL ? string : stringf, NULL, true).x;
+    ImGui::SetNextItemWidth(sized + GImGui->Style.FramePadding.x * 8.f);
+    bool ret = ImGui::InputText("", string, size, ImGuiInputTextFlags_CallbackResize, MyResizeCallback, (void*)prot); 
     ImGui::PopID();
+#ifdef _DEBUG
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%d", id);
+#endif
     if(ret)
         if (ImGui::IsKeyPressedMap(ImGuiKey_Enter) || GImGui->IO.MouseClicked[0])
             return *prot;
@@ -430,32 +461,69 @@ void inputtextmod(HashTable* hasht, uint32_t* hash, uintptr_t id)
     char* string = inputtext(hashtostr(hasht, *hash), id);
     if (string != NULL)
     {
-        *hash = hashfromstring(string);
-        free(string);
+        if (string[0] == '0' && string[1] == 'x')
+            *hash = strtoul(string, NULL, 16);
+        else
+        {
+            *hash = FNV1Hash(string);
+            if (lookupHashTable(hasht, *hash) == NULL)
+                insertHashTable(hasht, *hash, string);
+        }
+    }
+}
+
+void inputtextmodxx(HashTable* hasht, uint64_t* hash, uintptr_t id)
+{
+    char* string = inputtext(hashtostrxx(hasht, *hash), id);
+    if (string != NULL)
+    {
+        if (string[0] == '0' && string[1] == 'x')
+            *hash = strtoull(string, NULL, 16);
+        else
+        {
+            *hash = XXHash((const uint8_t*)string, strlen(string));
+            if (lookupHashTable(hasht, *hash) == NULL)
+                insertHashTable(hasht, *hash, string);
+        }
     }
 }
 
 void floatarray(void* data, int size, uintptr_t id)
 {
-    float indent = ImGui::GetCurrentWindow()->DC.CursorPos.x;
+    int lengthd = 0;
+    char* stringd = NULL;
     float* arr = (float*)data;
+    char** buf = (char**)calloc(size, sizeof(char*)); myassert(buf == NULL);
+    float indent = ImGui::GetCurrentWindow()->DC.CursorPos.x;
     for (int i = 0; i < size; i++)
     {
         uint8_t havepoint = 0;
-        char* buf = (char*)calloc(64, 1);
-        myassert(buf == NULL);
-        int length = sprintf(buf, "%g", arr[i]);
+        buf[i] = (char*)calloc(64, 1);
+        myassert(buf[i] == NULL);
+        int length = sprintf(buf[i], "%g", arr[i]);
+        myassert(length < 0);
         for (int k = 0; k < length; k++)
-            if (buf[k] == '.')
+            if (buf[i][k] == '.')
                 havepoint = 1;
         if (havepoint == 0)
-            length = sprintf(buf, "%g.0", arr[i]);
-        char* string = inputtext(buf, id + i);
+        {
+            length = sprintf(buf[i], "%g.0", arr[i]);
+            myassert(length < 0);
+        }
+        if (length > lengthd)
+        {
+            lengthd = length;
+            stringd = buf[i];
+        }
+    }
+    for (int i = 0; i < size; i++)
+    {
+        char* string = inputtext(buf[i], id + i, stringd);
         if (string != NULL)
             sscanf(string, "%g", &arr[i]);
         if (size == 16)
         {
-            if ((i+1) % 4 == 0)
+            if ((i+1) % 4 == 0 && i != 15)
             {
                 ImGui::NewLine();
                 ImGui::SameLine(indent);
@@ -466,8 +534,10 @@ void floatarray(void* data, int size, uintptr_t id)
         else if (i < size - 1)
             ImGui::SameLine();
         free(string);
-        free(buf);
     }
+    for (int i  = 0; i < size; i++)
+        free(buf[i]);
+    free(buf);
 }
 
 void getarraycount(BinField* value)
@@ -529,6 +599,8 @@ void getarraytype(BinField* value)
     }
 }
 
+#pragma endregion
+
 void cleanbin(BinField* value)
 {
     switch (value->typebin)
@@ -538,7 +610,7 @@ void cleanbin(BinField* value)
         {
             ContainerOrStruct* cs = (ContainerOrStruct*)value->data;
             for (uint32_t i = 0; i < cs->itemsize; i++)
-                cleanbin(cs->items[i]);
+                cleanbin(cs->items[i]->value);
             break;
         }
         case POINTER:
@@ -556,7 +628,7 @@ void cleanbin(BinField* value)
         {
             Option* op = (Option*)value->data;
             for (uint8_t i = 0; i < op->count; i++)
-                cleanbin(op->items[i]);
+                cleanbin(op->items[i]->value);
             break;
         }
         case MAP:
@@ -570,53 +642,125 @@ void cleanbin(BinField* value)
             break;
         }
     }
+    free(value->data);
     free(value);
 }
 
 void getstructidbin(BinField* value, uintptr_t* tree)
 {
-    *tree += 1;
-    value->id = *tree;
     switch (value->typebin)
     {
+        case FLAG:
+        case HASH:
+        case LINK:
+        case BOOLB:
+        case SInt8:
+        case UInt8:
+        case SInt16:
+        case UInt16:
+        case SInt32:
+        case UInt32:
+        case SInt64:
+        case UInt64:
+        case STRING:
+        case Float32:
+        case WADENTRYLINK:
+        {
+            if (value->id == 0)
+            {
+                value->id = *tree;
+                *tree += 1;
+            }
+            break;
+        }
         case VEC2:
-            *tree += 1;
+        {
+            if (value->id == 0)
+            {
+                value->id = *tree;
+                *tree += 2;
+            }
             break;
+        }
         case VEC3:
-            *tree += 2;
+        {
+            if (value->id == 0)
+            {
+                value->id = *tree;
+                *tree += 3;
+            }
             break;
+        }
         case VEC4:
         case RGBA:
-            *tree += 3;
+        {
+            if (value->id == 0)
+            {
+                value->id = *tree;
+                *tree += 4;
+            }
             break;
+        }
         case MTX44:
-            *tree += 15;
+        {
+            if (value->id == 0)
+            {
+                value->id = *tree;
+                *tree += 16;
+            }
             break;
+        }
         case STRUCT:
         case CONTAINER:
-        {        
+        {
+            if (value->id == 0)
+            {
+                value->id = *tree;
+                *tree += 1;
+            }
             ContainerOrStruct* cs = (ContainerOrStruct*)value->data;
             for (uint32_t i = 0; i < cs->itemsize; i++)
             {
                 if (cs->valueType == CONTAINER || cs->valueType == STRUCT || cs->valueType == OPTION || cs->valueType == MAP)
-                    *tree += 1;
-                getstructidbin(cs->items[i], tree);
+                {
+                    if (cs->items[i]->id == 0)
+                    {
+                        cs->items[i]->id = *tree;
+                        *tree += 1;
+                    }
+                }
+                getstructidbin(cs->items[i]->value, tree);
             }
             break;
         }
         case POINTER:
         case EMBEDDED:
         {
-            *tree += 1;
+            if (value->id == 0)
+            {
+                value->id = *tree;
+                *tree += 5;
+            }
             PointerOrEmbed* pe = (PointerOrEmbed*)value->data;
             if (pe->name != 0)
             {
                 for (uint16_t i = 0; i < pe->itemsize; i++)
                 {
-                    *tree += 1;
-                    Type typi = pe->items[i]->value->typebin;
-                    if ((typi >= CONTAINER && typi <= EMBEDDED) || typi == OPTION || typi == MAP)
-                        *tree += 1;
+                    if (pe->items[i]->id1 == 0)
+                    {
+                        Type typi = pe->items[i]->value->typebin;
+                        if ((typi >= CONTAINER && typi <= EMBEDDED) || typi == OPTION || typi == MAP)
+                        {
+                            pe->items[i]->id1 = *tree;
+                            pe->items[i]->id2 = *tree + 1;
+                            *tree += 2;
+                        }
+                        else
+                        {
+                            pe->items[i]->id1 = *tree;
+                            *tree += 1;
+                        }
+                    }
                     getstructidbin(pe->items[i]->value, tree);
                 }
             }
@@ -624,25 +768,43 @@ void getstructidbin(BinField* value, uintptr_t* tree)
         }
         case OPTION:
         {
+            if (value->id == 0)
+            {
+                value->id = *tree;
+                *tree += 1;
+            }
             Option* op = (Option*)value->data;
             for (uint8_t i = 0; i < op->count; i++)
             {
-                if (op->valueType == CONTAINER || op->valueType == STRUCT || op->valueType == OPTION || op->valueType == MAP)
-                    *tree += 1;
-                getstructidbin(op->items[i], tree);
+                if (op->items[i]->id == 0)
+                {
+                    if (op->valueType == CONTAINER || op->valueType == STRUCT || op->valueType == OPTION || op->valueType == MAP)
+                    {
+                        op->items[i]->id = *tree;
+                        *tree += 1;
+                    }
+                }
+                getstructidbin(op->items[i]->value, tree);
             }
             break;
         }
         case MAP:
         {
+            if (value->id == 0)
+            {
+                value->id = *tree;
+                *tree += 2;
+            }
             Map* mp = (Map*)value->data;
             for (uint32_t i = 0; i < mp->itemsize; i++)
             {
-                if (mp->keyType == CONTAINER || mp->keyType == STRUCT || mp->keyType == OPTION || mp->keyType == MAP)
-                    *tree += 1;
+                if (mp->items[i]->id1 == 0)
+                {
+                    mp->items[i]->id1 = *tree;
+                    mp->items[i]->id2 = *tree + 1;
+                    *tree += 2;
+                }
                 getstructidbin(mp->items[i]->key, tree);
-                if (mp->valueType == CONTAINER || mp->valueType == STRUCT || mp->valueType == OPTION || mp->valueType == MAP)
-                    *tree += 1;
                 getstructidbin(mp->items[i]->value, tree);
             }
             break;
@@ -650,18 +812,92 @@ void getstructidbin(BinField* value, uintptr_t* tree)
     }
 }
 
-void getvaluefromtype(BinField* value, HashTable* hasht, HashTable* hashx, ImGuiTreeNodeFlags flags)
+BinField* binfieldclean(Type typi, Type typo, Type typu)
+{
+    BinField* result = (BinField*)calloc(1, sizeof(BinField));
+    myassert(result == NULL);
+    result->typebin = typi;
+    uint32_t size = Type_sizeclean[typi];
+    myassert(size == NULL);
+    result->data = calloc(1, size);
+    myassert(result->data == NULL);
+    switch (typi)
+    {
+        case STRUCT:
+        case CONTAINER:
+        {
+            ContainerOrStruct* cs = (ContainerOrStruct*)result->data;
+            cs->valueType = typo;
+            break;
+        }
+        case OPTION:
+        {
+            Option* op = (Option*)result->data;
+            op->valueType = typo;
+            break;
+        }
+        case MAP:
+        {
+            Map* mp = (Map*)result->data;
+            mp->keyType = typo;
+            mp->valueType = typu;
+            break;
+        }
+    }
+    return result;
+}
+
+void binfieldadd(uintptr_t id, int* current1, int* current2, int* current3, bool showfirst = false)
+{
+    if (showfirst)
+    {
+        ImGui::PushID((void*)id);
+        ImGui::SetNextItemWidth(ImGui::CalcTextSize("WadEntryLink", NULL, true).x * 1.5f);
+        ImGui::SameLine(); ImGui::Combo("", current1, Type_strings, 27);
+        ImGui::PopID();
+        #ifdef _DEBUG
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%d", id);
+        #endif
+    }
+    if (*current1 == CONTAINER || *current1 == STRUCT || *current1 == OPTION || *current1 == MAP)
+    {
+
+        ImGui::PushID((void*)(id + (showfirst ? 1 : 0)));
+        ImGui::SetNextItemWidth(ImGui::CalcTextSize("WadEntryLink", NULL, true).x * 1.5f);
+        ImGui::SameLine(); ImGui::Combo("", current2, Type_strings, 27);
+        ImGui::PopID();
+        #ifdef _DEBUG
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%d", id + (showfirst ? 1 : 0));
+        #endif
+    }
+    if (*current1 == MAP)
+    {
+        ImGui::PushID((void*)(id + (showfirst ? 2 : 1)));
+        ImGui::SetNextItemWidth(ImGui::CalcTextSize("WadEntryLink", NULL, true).x * 1.5f);
+        ImGui::SameLine(); ImGui::Combo("", current3, Type_strings, 27);
+        ImGui::PopID();
+        #ifdef _DEBUG
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%d", id + (showfirst ? 2 : 1));
+        #endif
+    }
+}
+
+void getvaluefromtype(BinField* value, HashTable* hasht, ImGuiTreeNodeFlags flags, uintptr_t* tree, bool* poe = NULL)
 {
     const char* fmt = Type_fmt[value->typebin];
     if (fmt != NULL)
     {
-        char* buf = (char*)calloc(32, 1);
-        myassert(buf == NULL);
-        sprintf(buf, fmt, *(uint64_t*)value->data);
+        char* buf = (char*)calloc(32, 1); myassert(buf == NULL);
+        myassert(sprintf(buf, fmt, *(uint64_t*)value->data) < 0);
         char* string = inputtext(buf, value->id);
         if (string != NULL)
+        {
             sscanf(string, fmt, value->data);
-        free(string);
+            free(string);
+        }
         free(buf);
     }
     else
@@ -696,13 +932,14 @@ void getvaluefromtype(BinField* value, HashTable* hasht, HashTable* hashx, ImGui
                 break;
             case RGBA:
             {
+                char* sttrg = _strdup("255");
                 uint8_t* arr = (uint8_t*)value->data;
                 for (int i = 0; i < 4; i++)
                 {
                     char* buf = (char*)calloc(64, 1);
                     myassert(buf == NULL);
-                    sprintf(buf, "%" PRIu8, arr[i]);
-                    char* string = inputtext(buf, value->id + i);
+                    myassert(sprintf(buf, "%" PRIu8, arr[i]) < 0);
+                    char* string = inputtext(buf, value->id + i, sttrg);
                     if (string != NULL)
                         sscanf(string, "%" PRIu8, &arr[i]);
                     free(string);
@@ -724,71 +961,53 @@ void getvaluefromtype(BinField* value, HashTable* hasht, HashTable* hashx, ImGui
             }
             case HASH:
             case LINK:
-            {
-                char* string = inputtext(hashtostr(hasht, *(uint32_t*)value->data), value->id);
-                if (string != NULL)
-                {
-                    uint32_t data = hashfromstring(string);
-                    myassert(memcpy(value->data, &data, 4) == NULL);
-                    if(hashtostr(hasht, data) == NULL)
-                        insertHashTable(hasht, data, string);
-                }
+                inputtextmod(hasht, (uint32_t*)value->data, value->id);
                 break;
-            }
             case WADENTRYLINK:
-            {
-                char* string = inputtext(hashtostrxx(hashx, *(uint64_t*)value->data), value->id);
-                if (string != NULL)
-                {
-                    uint64_t data = hashfromstringxx(string);
-                    myassert(memcpy(value->data, &data, 8) == NULL);
-                    if(hashtostrxx(hasht, data) == NULL)
-                        insertHashTable(hashx, data, string);
-                }
+                inputtextmodxx(hasht, (uint64_t*)value->data, value->id);
                 break;
-            }
             case CONTAINER:
             case STRUCT:
             {
                 ContainerOrStruct* cs = (ContainerOrStruct*)value->data;
-                if (cs->itemsize != 0)
+                if (cs->valueType == CONTAINER || cs->valueType == STRUCT || cs->valueType == OPTION || cs->valueType == MAP)
                 {
-                    if (cs->valueType == CONTAINER || cs->valueType == STRUCT || cs->valueType == OPTION || cs->valueType == MAP)
+                    for (uint32_t i = 0; i < cs->itemsize; i++)
                     {
-                        for (uint32_t i = 0; i < cs->itemsize; i++)
+                        ImGui::AlignTextToFramePadding();
+                        bool treeopen = ImGui::TreeNodeEx((void*)(cs->items[i]->id), ImGuiTreeNodeFlags_Framed | 
+                            ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth | flags, "");
+                        #ifdef _DEBUG
+                        if (ImGui::IsItemHovered())
+                            ImGui::SetTooltip("%d", cs->items[i]->id);
+                        #endif
+                        ImGui::SameLine(); ImGui::Text("%s", Type_strings[cs->valueType]);
+                        ImGui::SameLine(0, 1); getarraytype(cs->items[i]->value);
+                        ImGui::SameLine(); getarraycount(cs->items[i]->value);
+                        if (treeopen)
                         {
                             ImGui::Indent();
-                            ImGui::AlignTextToFramePadding();
-                            bool treeopen = ImGui::TreeNodeEx((void*)(cs->items[i]->id - 1),
-                                ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth | flags, "");
-                            ImGui::SameLine(); ImGui::Text("%s", Type_strings[cs->valueType]);
-                            ImGui::SameLine(0, 1); getarraytype(cs->items[i]);
-                            ImGui::SameLine(); getarraycount(cs->items[i]);
-                            if (treeopen)
-                            {
-                                ImGui::Indent();
-                                getvaluefromtype(cs->items[i], hasht, hashx, flags);
-                                ImGui::Unindent();
-                                ImGui::TreePop();
-                            }
+                            getvaluefromtype(cs->items[i]->value, hasht, flags, tree);
                             ImGui::Unindent();
-                        }
-                    }
-                    else
-                    {
-                        for (uint32_t i = 0; i < cs->itemsize; i++)
-                        {
-                            ImGui::Indent();
-                            getvaluefromtype(cs->items[i], hasht, hashx, flags);
-                            ImGui::Unindent();
+                            ImGui::TreePop();
                         }
                     }
                 }
                 else
                 {
-                    ImGui::Indent();
-                    ImGui::Text("Null");
-                    ImGui::Unindent();
+                    for (uint32_t i = 0; i < cs->itemsize; i++)
+                        getvaluefromtype(cs->items[i]->value, hasht, flags, tree);
+                }
+                int typi = cs->valueType;
+                bool add = ImGui::Button("Add new item");
+                binfieldadd(value->id, &typi, &cs->current2, &cs->current3);
+                if (add)
+                {
+                    cs->itemsize += 1;
+                    cs->items = (IdField**)realloc(cs->items, cs->itemsize * sizeof(IdField*)); myassert(cs->items == NULL);
+                    cs->items[cs->itemsize-1] = (IdField*)calloc(1, sizeof(IdField)); myassert(cs->items[cs->itemsize-1] == NULL);
+                    cs->items[cs->itemsize-1]->value = binfieldclean(cs->valueType, (Type)cs->current2, (Type)cs->current3);
+                    getstructidbin(value, tree);
                 }
                 break;
             }
@@ -796,164 +1015,203 @@ void getvaluefromtype(BinField* value, HashTable* hasht, HashTable* hashx, ImGui
             case EMBEDDED:
             {
                 PointerOrEmbed* pe = (PointerOrEmbed*)value->data;
-                if (pe->name != 0)
+                if (pe->name != NULL)
                 {
+                    bool treeopen = false;
                     ImGui::AlignTextToFramePadding();
-                    bool treeopen = ImGui::TreeNodeEx((void*)value->id,
-                        ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth | flags, "");
-                    ImGui::SameLine(); inputtextmod(hasht, &pe->name, value->id + 1);
-                    ImGui::SameLine(); ImGui::Text(": %s", Type_strings[value->typebin]);
+                    if (poe == NULL)
+                    {
+                        treeopen = ImGui::TreeNodeEx((void*)value->id, ImGuiTreeNodeFlags_Framed | 
+                            ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth | flags, "");
+                        #ifdef _DEBUG
+                        if (ImGui::IsItemHovered())
+                            ImGui::SetTooltip("%d", value->id);
+                        #endif
+                    }
+                    else
+                    {
+                        treeopen = *poe;
+                    }
+                    if (poe == NULL)
+                        ImGui::SameLine();
+                    inputtextmod(hasht, &pe->name, value->id+1);
+                    if (poe == NULL)
+                    {
+                        ImGui::SameLine(); ImGui::Text(": %s", Type_strings[value->typebin]);
+                    }
                     ImGui::SameLine(); getarraycount(value);
                     if (treeopen)
                     {
+                        ImGui::Indent();
                         for (uint16_t i = 0; i < pe->itemsize; i++)
                         {
                             Type typi = pe->items[i]->value->typebin;
-                            if ((typi >= CONTAINER && typi <= EMBEDDED) || typi == OPTION || typi == MAP)
-                            {
-                                ImGui::Indent();
+                            if (typi == CONTAINER || typi == STRUCT || typi == OPTION || typi == MAP)
+                            {                            
                                 ImGui::AlignTextToFramePadding();
-                                bool treeopene = ImGui::TreeNodeEx((void*)(pe->items[i]->value->id - 2),
+                                bool treeopene = ImGui::TreeNodeEx((void*)(pe->items[i]->id1), ImGuiTreeNodeFlags_Framed | 
                                     ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth | flags, "");
-                                ImGui::SameLine(); inputtextmod(hasht, &pe->items[i]->key, pe->items[i]->value->id - 1);
+                                #ifdef _DEBUG
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("%d", pe->items[i]->id1);
+                                #endif
+                                ImGui::SameLine(); inputtextmod(hasht, &pe->items[i]->key, pe->items[i]->id2);
                                 ImGui::SameLine(); ImGui::Text(": %s", Type_strings[typi]);
                                 ImGui::SameLine(0, 1); getarraytype(pe->items[i]->value);
                                 ImGui::SameLine(); getarraycount(pe->items[i]->value);
                                 if (treeopene)
                                 {
                                     ImGui::Indent();
-                                    getvaluefromtype(pe->items[i]->value, hasht, hashx, flags);
+                                    getvaluefromtype(pe->items[i]->value, hasht, flags, tree);
                                     ImGui::Unindent();
                                     ImGui::TreePop();
                                 }
-                                ImGui::Unindent();
+                            }
+                            else if (typi == POINTER || typi == EMBEDDED)
+                            {
+                                ImGui::AlignTextToFramePadding();
+                                bool treeopene = ImGui::TreeNodeEx((void*)pe->items[i]->id1, ImGuiTreeNodeFlags_Framed |
+                                    ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth | flags, "");
+                                #ifdef _DEBUG
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("%d", pe->items[i]->id1);
+                                #endif
+                                ImGui::SameLine(); inputtextmod(hasht, &pe->items[i]->key, pe->items[i]->id2);
+                                ImGui::SameLine(); ImGui::Text(":"); ImGui::SameLine();
+                                getvaluefromtype(pe->items[i]->value, hasht, flags, tree, &treeopene);
+                                if (treeopene)
+                                    ImGui::TreePop();
                             }
                             else
                             {
-                                ImGui::Indent();
-                                inputtextmod(hasht, &pe->items[i]->key, pe->items[i]->value->id - 1);
+                                inputtextmod(hasht, &pe->items[i]->key, pe->items[i]->id1);
                                 ImGui::SameLine(); ImGui::Text(": %s", Type_strings[typi]);
                                 ImGui::SameLine(); ImGui::Text("="); ImGui::SameLine();
-                                getvaluefromtype(pe->items[i]->value, hasht, hashx, flags);
-                                ImGui::Unindent();
+                                getvaluefromtype(pe->items[i]->value, hasht, flags, tree);
                             }
                         }
-                        ImGui::TreePop();
+                        bool add = ImGui::Button("Add new item");
+                        binfieldadd(value->id+2, &pe->current1, &pe->current2, &pe->current3, true);
+                        if (add)
+                        {
+                            pe->itemsize += 1;
+                            pe->items = (Field**)realloc(pe->items, pe->itemsize * sizeof(Field*)); myassert(pe->items == NULL);
+                            pe->items[pe->itemsize-1] = (Field*)calloc(1, sizeof(Field)); myassert(pe->items[pe->itemsize-1] == NULL);
+                            pe->items[pe->itemsize-1]->value = binfieldclean((Type)pe->current1, (Type)pe->current2, (Type)pe->current3);
+                            getstructidbin(value, tree);
+                        }
+                        ImGui::Unindent();
+                        if (poe == NULL)
+                            ImGui::TreePop();
                     }
                 }
                 else
                 {
-                    ImGui::Text("Pointer Null");
+                    inputtextmod(hasht, &pe->name, value->id);
                 }
                 break;
             }
             case OPTION:
             {
                 Option* op = (Option*)value->data;
-                if (op->count != 0)
+                if (op->valueType == CONTAINER || op->valueType == STRUCT || op->valueType == OPTION || op->valueType == MAP)
                 {
-                    if (op->valueType == CONTAINER || op->valueType == STRUCT || op->valueType == OPTION || op->valueType == MAP)
+                    for (uint32_t i = 0; i < op->count; i++)
                     {
-                        for (uint32_t i = 0; i < op->count; i++)
+                        ImGui::AlignTextToFramePadding();
+                        bool treeopen = ImGui::TreeNodeEx((void*)(op->items[i]->id), ImGuiTreeNodeFlags_Framed | 
+                            ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth | flags, "");
+                        #ifdef _DEBUG
+                        if (ImGui::IsItemHovered())
+                            ImGui::SetTooltip("%d", op->items[i]->id);
+                        #endif
+                        ImGui::SameLine(); ImGui::Text("%s", Type_strings[op->valueType]);
+                        ImGui::SameLine(0, 1); getarraytype(op->items[i]->value);
+                        ImGui::SameLine(); getarraycount(op->items[i]->value);
+                        if (treeopen)
                         {
                             ImGui::Indent();
-                            ImGui::AlignTextToFramePadding();
-                            bool treeopen = ImGui::TreeNodeEx((void*)(op->items[i]->id - 1),
-                                ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth | flags, "");
-                            ImGui::SameLine(); ImGui::Text("%s", Type_strings[op->valueType]);
-                            ImGui::SameLine(0, 1); getarraytype(op->items[i]);
-                            ImGui::SameLine(); getarraycount(op->items[i]);
-                            if (treeopen)
-                            {
-                                ImGui::Indent();
-                                getvaluefromtype(op->items[i], hasht, hashx, flags);
-                                ImGui::Unindent();
-                                ImGui::TreePop();
-                            }
+                            getvaluefromtype(op->items[i]->value, hasht, flags, tree);
                             ImGui::Unindent();
-                        }
-                    }
-                    else
-                    {
-                        for (uint32_t i = 0; i < op->count; i++)
-                        {
-                            ImGui::Indent();
-                            getvaluefromtype(op->items[i], hasht, hashx, flags);
-                            ImGui::Unindent();
+                            ImGui::TreePop();
                         }
                     }
                 }
                 else
                 {
-                    ImGui::Indent();
-                    ImGui::Text("Null");
-                    ImGui::Unindent();
+                    for (uint32_t i = 0; i < op->count; i++)
+                        getvaluefromtype(op->items[i]->value, hasht, flags, tree);
+                }
+                int typi = op->valueType;
+                bool add = ImGui::Button("Add new item");
+                binfieldadd(value->id, &typi, &op->current2, &op->current3);
+                if (add)
+                {
+                    op->count += 1;
+                    op->items = (IdField**)realloc(op->items, op->count * sizeof(IdField*)); myassert(op->items == NULL);
+                    op->items[op->count-1] = (IdField*)calloc(1, sizeof(IdField)); myassert(op->items[op->count-1] == NULL);
+                    op->items[op->count-1]->value = binfieldclean(op->valueType, (Type)op->current2, (Type)op->current3);
+                    getstructidbin(value, tree);
                 }
                 break;
             }
             case MAP:
             {
                 Map* mp = (Map*)value->data;
-                if (mp->itemsize != 0)
+                //ImGui::BeginChild(value->id, ImVec2(0, 0), true);
+                for (uint32_t i = 0; i < mp->itemsize; i++)
                 {
-                    for (uint32_t i = 0; i < mp->itemsize; i++)
+                    ImGui::AlignTextToFramePadding();
+                    bool treeopen = ImGui::TreeNodeEx((void*)(mp->items[i]->id1), ImGuiTreeNodeFlags_Framed | 
+                        ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth | flags, "");
+                    #ifdef _DEBUG
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("%d", mp->items[i]->id1);
+                    #endif
+                    Type typi = mp->items[i]->key->typebin;
+                    if ((typi <= WADENTRYLINK) || typi == LINK || typi == FLAG)
+                    {
+                        ImGui::SameLine(); ImGui::Text("%s", Type_strings[typi]);
+                        ImGui::SameLine(); ImGui::Text("=");
+                    }
+                    ImGui::SameLine(); getvaluefromtype(mp->items[i]->key, hasht, flags, tree);
+                    if (treeopen)
                     {
                         ImGui::Indent();
-                        if (mp->keyType == CONTAINER || mp->keyType == STRUCT || mp->keyType == OPTION || mp->keyType == MAP)
+                        ImGui::AlignTextToFramePadding();
+                        Type typd = mp->items[i]->value->typebin;
+                        if ((typd <= WADENTRYLINK) || typd == LINK || typd == FLAG)
                         {
-                            ImGui::AlignTextToFramePadding();
-                            bool treeopen = ImGui::TreeNodeEx((void*)(mp->items[i]->key->id - 1),
-                                ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth | flags, "");
-                            ImGui::SameLine(); ImGui::Text("%s", Type_strings[mp->keyType]);
-                            ImGui::SameLine(0, 1); getarraytype(mp->items[i]->key);
-                            ImGui::SameLine(); getarraycount(mp->items[i]->key);
-                            if (treeopen)
-                            {
-                                ImGui::Indent();
-                                getvaluefromtype(mp->items[i]->key, hasht, hashx, flags);
-                                ImGui::Unindent();
-                                ImGui::TreePop();
-                            }
+                            ImGui::Text("%s", Type_strings[typd]);
+                            ImGui::SameLine(); ImGui::Text("="); ImGui::SameLine();
                         }
-                        else
-                        {
-                            getvaluefromtype(mp->items[i]->key, hasht, hashx, flags);
-                        }
-                        ImGui::SameLine(); ImGui::Text(":"); ImGui::SameLine();
-                        if (mp->valueType == CONTAINER || mp->valueType == STRUCT || mp->valueType == OPTION || mp->valueType == MAP)
-                        {
-                            ImGui::AlignTextToFramePadding();
-                            bool treeopen = ImGui::TreeNodeEx((void*)(mp->items[i]->value->id - 1),
-                                ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth | flags, "");
-                            ImGui::SameLine(); ImGui::Text("%s", Type_strings[mp->valueType]);
-                            ImGui::SameLine(0, 1); getarraytype(mp->items[i]->value);
-                            ImGui::SameLine(); getarraycount(mp->items[i]->value);
-                            if (treeopen)
-                            {
-                                ImGui::Indent();
-                                getvaluefromtype(mp->items[i]->value, hasht, hashx, flags);
-                                ImGui::Unindent();
-                                ImGui::TreePop();
-                            }
-                        }
-                        else
-                        {
-                            getvaluefromtype(mp->items[i]->value, hasht, hashx, flags);
-                        }
+                        getvaluefromtype(mp->items[i]->value, hasht, flags, tree);
                         ImGui::Unindent();
-                    }
+                        ImGui::TreePop();
+                    }         
                 }
-                else
+                int typi = mp->keyType;
+                int typf = mp->valueType;
+                bool add = ImGui::Button("Add new item");
+                binfieldadd(value->id, &typi, &mp->current2, &mp->current3);
+                binfieldadd(value->id+1, &typf, &mp->current4, &mp->current5);
+                if (add)
                 {
-                    ImGui::Indent();
-                    ImGui::Text("Null");
-                    ImGui::Unindent();
+                    mp->itemsize += 1;
+                    mp->items = (Pair**)realloc(mp->items, mp->itemsize * sizeof(Pair*)); myassert(mp->items == NULL);
+                    mp->items[mp->itemsize-1] = (Pair*)calloc(1, sizeof(Pair)); myassert(mp->items[mp->itemsize-1] == NULL);
+                    mp->items[mp->itemsize-1]->key = binfieldclean(mp->keyType, (Type)mp->current2, (Type)mp->current3);
+                    mp->items[mp->itemsize-1]->value = binfieldclean(mp->valueType, (Type)mp->current4, (Type)mp->current5);
+                    getstructidbin(value, tree);
                 }
+                //ImGui::EndChild();
                 break;
             }
         }
     }
 }
+
+#pragma region FromBinReader
 
 BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
 {
@@ -998,10 +1256,14 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
                 memfread(&count, 4, fp);
                 tmpcs->itemsize = count;
                 tmpcs->valueType = uinttotype(type);
-                tmpcs->items = (BinField**)calloc(count, sizeof(BinField*));
+                tmpcs->items = (IdField**)calloc(count, sizeof(IdField*));
                 myassert(tmpcs->items == NULL);
                 for (uint32_t i = 0; i < count; i++)
-                    tmpcs->items[i] = readvaluebytype(tmpcs->valueType, hasht, fp);
+                {
+                    tmpcs->items[i] = (IdField*)calloc(1, sizeof(IdField));
+                    myassert(tmpcs->items[i] == NULL);
+                    tmpcs->items[i]->value = readvaluebytype(tmpcs->valueType, hasht, fp);
+                }
                 result->data = tmpcs;
                 break;
             }
@@ -1015,7 +1277,6 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
                 memfread(&tmppe->name, 4, fp);
                 if (tmppe->name == 0)
                 {
-                    tmppe->itemsize = 1;
                     result->data = tmppe;
                     break;
                 }
@@ -1047,10 +1308,14 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
                 memfread(&count, 1, fp);
                 tmpo->count = count;
                 tmpo->valueType = uinttotype(type);
-                tmpo->items = (BinField**)calloc(count, sizeof(BinField*));
+                tmpo->items = (IdField**)calloc(count, sizeof(IdField*));
                 myassert(tmpo->items == NULL);
-                for (uint8_t i = 0; i < count; i++)
-                    tmpo->items[i] = readvaluebytype(tmpo->valueType, hasht, fp);
+                for (uint32_t i = 0; i < count; i++)
+                {
+                    tmpo->items[i] = (IdField*)calloc(1, sizeof(IdField));
+                    myassert(tmpo->items[i] == NULL);
+                    tmpo->items[i]->value = readvaluebytype(tmpo->valueType, hasht, fp);
+                }
                 result->data = tmpo;
                 break;
             }
@@ -1095,7 +1360,7 @@ uint32_t getsize(BinField* value)
         switch (value->typebin)
         {
             case STRING:
-                size = 2 + strlen((char*)value->data);
+                size = 2 + (uint32_t)strlen((char*)value->data);
                 break;
             case STRUCT:
             case CONTAINER:
@@ -1103,7 +1368,7 @@ uint32_t getsize(BinField* value)
                 size = 1 + 4 + 4;
                 ContainerOrStruct* cs = (ContainerOrStruct*)value->data;
                 for (uint32_t i = 0; i < cs->itemsize; i++)
-                    size += getsize(cs->items[i]);
+                    size += getsize(cs->items[i]->value);
                 break;
             }
             case POINTER:
@@ -1124,7 +1389,7 @@ uint32_t getsize(BinField* value)
                 size = 2;
                 Option* op = (Option*)value->data;
                 for (uint8_t i = 0; i < op->count; i++)
-                    size += getsize(op->items[i]);
+                    size += getsize(op->items[i]->value);
                 break;
             }
             case MAP:
@@ -1193,11 +1458,11 @@ void writevaluebybin(BinField* value, charv* str)
             uint8_t type = typetouint(cs->valueType);
             memfwrite(&type, 1, str);
             for (uint16_t k = 0; k < cs->itemsize; k++)
-                size += getsize(cs->items[k]);
+                size += getsize(cs->items[k]->value);
             memfwrite((char*)&size, 4, str);
             memfwrite((char*)&cs->itemsize, 4, str);
             for (uint32_t i = 0; i < cs->itemsize; i++)
-                writevaluebybin(cs->items[i], str);
+                writevaluebybin(cs->items[i]->value, str);
             break;
         }
         case POINTER:
@@ -1229,7 +1494,7 @@ void writevaluebybin(BinField* value, charv* str)
             memfwrite(&type, 1, str);
             memfwrite(&op->count, 1, str);
             for (uint8_t i = 0; i < op->count; i++)
-                writevaluebybin(op->items[i], str);
+                writevaluebybin(op->items[i]->value, str);
             break;
         }
         case MAP:
@@ -1254,12 +1519,18 @@ void writevaluebybin(BinField* value, charv* str)
     }
 }
 
+typedef struct PacketId
+{
+    char* str;
+    uintptr_t id;
+} PacketId;
+
 typedef struct PacketBin
 {
     bool isprop;
     uint32_t Version;
     uint32_t linkedsize; 
-    char** LinkedList;
+    PacketId** LinkedList;
     BinField* entriesMap;
 } PacketBin;
 
@@ -1310,21 +1581,23 @@ PacketBin* decode(char* filepath, HashTable* hasht)
     packet->Version = Version;
 
     uint32_t linkedFilesCount = 0;
-    char** LinkedList = NULL;
+    PacketId** LinkedList = NULL;
     if (Version >= 2)
     {
         uint16_t stringlength = 0;
         memfread(&linkedFilesCount, 4, &fp);
         if (linkedFilesCount > 0)
         {
-            char** LinkedListt = (char**)calloc(linkedFilesCount, sizeof(char*));
+            PacketId** LinkedListt = (PacketId**)calloc(linkedFilesCount, sizeof(PacketId*));
             myassert(LinkedListt == NULL);
             for (uint32_t i = 0; i < linkedFilesCount; i++) {
                 memfread(&stringlength, 2, &fp);
-                LinkedListt[i] = (char*)calloc(stringlength + 1, 1);
+                LinkedListt[i] = (PacketId*)calloc(1, sizeof(PacketId));
                 myassert(LinkedListt[i] == NULL);
-                memfread(LinkedListt[i], (size_t)stringlength, &fp);
-                LinkedListt[i][stringlength] = '\0';
+                LinkedListt[i]->str = (char*)calloc(stringlength + 1, 1);
+                myassert(LinkedListt[i]->str == NULL);
+                memfread(LinkedListt[i]->str, (size_t)stringlength, &fp);
+                LinkedListt[i]->str[stringlength] = '\0';
             }
             LinkedList = LinkedListt;
         }
@@ -1429,9 +1702,9 @@ int encode(char* filepath, PacketBin* packet)
         memfwrite(&packet->linkedsize, 4, str);
         for (uint32_t i = 0; i < packet->linkedsize; i++)
         {
-            uint16_t len = (uint16_t)strlen(packet->LinkedList[i]);
+            uint16_t len = (uint16_t)strlen(packet->LinkedList[i]->str);
             memfwrite(&len, 2, str);
-            memfwrite(packet->LinkedList[i], len, str);
+            memfwrite(packet->LinkedList[i]->str, len, str);
         }
     }
 
@@ -1475,3 +1748,5 @@ int encode(char* filepath, PacketBin* packet)
     free(str->data);
     return 0;
 }
+
+#pragma endregion
