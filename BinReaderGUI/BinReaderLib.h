@@ -210,7 +210,7 @@ char* lookupHashTable(HashTable* t, uint64_t key)
     return NULL;
 }
 
-int addhash(HashTable* map, const char* filename)
+int addhash(HashTable* map, const char* filename, bool xxhash = false)
 {
     FILE* file = fopen(filename, "rb");
     if (!file)
@@ -228,10 +228,21 @@ int addhash(HashTable* map, const char* filename)
     fclose(file);
     char* hashend;
     char* hashline = strtok(fp, "\n");
-    while (hashline != NULL) {
-        uint64_t key = strtoul(hashline, &hashend, 16);
-        insertHashTable(map, key, hashend + 1);
-        hashline = strtok(NULL, "\n");
+    if (xxhash == false)
+    {
+        while (hashline != NULL) {
+            uint64_t key = strtoul(hashline, &hashend, 16);
+            insertHashTable(map, key, hashend + 1);
+            hashline = strtok(NULL, "\n");
+        }
+    }
+    else
+    {
+        while (hashline != NULL) {
+            uint64_t key = strtoull(hashline, &hashend, 16);
+            insertHashTable(map, key, hashend + 1);
+            hashline = strtok(NULL, "\n");
+        }
     }
     return 0;
 }
@@ -895,7 +906,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht, ImGuiTreeNodeFlags flag
         char* string = inputtext(buf, value->id);
         if (string != NULL)
         {
-            sscanf(string, fmt, value->data);
+            myassert(sscanf(string, fmt, value->data) < 0);
             free(string);
         }
         free(buf);
@@ -941,7 +952,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht, ImGuiTreeNodeFlags flag
                     myassert(sprintf(buf, "%" PRIu8, arr[i]) < 0);
                     char* string = inputtext(buf, value->id + i, sttrg);
                     if (string != NULL)
-                        sscanf(string, "%" PRIu8, &arr[i]);
+                        myassert(sscanf(string, "%" PRIu8, &arr[i]) < 0);
                     free(string);
                     free(buf);
                     if (i < 3)

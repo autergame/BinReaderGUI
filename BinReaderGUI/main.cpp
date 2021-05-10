@@ -303,7 +303,7 @@ int main()
 	addhash(hasht, "hashes.binfields.txt");
 	addhash(hasht, "hashes.binhashes.txt");
 	addhash(hasht, "hashes.binentries.txt");
-	addhash(hasht, "hashes.game.txt");
+	addhash(hasht, "hashes.game.txt", true);
 	printf("finised loading hashes.\n");
 
 	HKEY testkey = nullptr;
