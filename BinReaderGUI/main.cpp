@@ -276,29 +276,29 @@ int main()
 	ImGui_ImplWin32_Init(window);
 	ImGui_ImplOpenGL3_Init("#version 130");
 	ImVec4* colors = GImGui->Style.Colors;
-	colors[ImGuiCol_FrameBg] = ImVec4(0.3f, 0.3f, 0.3f, 1.f);
+	colors[ImGuiCol_FrameBg] = ImVec4(0.3f, 0.3f, 0.3f, 1.0f);
 	colors[ImGuiCol_Header] = ImVec4(0.2f, 0.2f, 0.2f, 0.75f);
-	colors[ImGuiCol_Button] = ImVec4(0.2f, 0.2f, 0.2f, 1.f);
+	colors[ImGuiCol_Button] = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
 	colors[ImGuiCol_Border] = ImVec4(0.3f, 0.3f, 0.3f, 0.5f);
-	colors[ImGuiCol_FrameBgHovered] = ImVec4(0.4f, 0.4f, 0.4f, 1.f);
-	colors[ImGuiCol_HeaderHovered] = ImVec4(0.4f, 0.4f, 0.4f, 1.f);
-	colors[ImGuiCol_ButtonHovered] = ImVec4(0.3f, 0.3f, 0.3f, 1.f);
-	colors[ImGuiCol_FrameBgActive] = ImVec4(0.4f, 0.4f, 0.4f, 1.f);
-	colors[ImGuiCol_HeaderActive] = ImVec4(0.4f, 0.4f, 0.4f, 1.f);
-	colors[ImGuiCol_ButtonActive] = ImVec4(0.4f, 0.4f, 0.4f, 1.f);
-	colors[ImGuiCol_TextSelectedBg] = ImVec4(0.4f, 0.4f, 0.4f, 1.f);
-	colors[ImGuiCol_MenuBarBg] = ImVec4(0.2f, 0.2f, 0.2f, 1.f);
-	ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.f);
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.f);
+	colors[ImGuiCol_FrameBgHovered] = ImVec4(0.4f, 0.4f, 0.4f, 1.0f);
+	colors[ImGuiCol_HeaderHovered] = ImVec4(0.4f, 0.4f, 0.4f, 1.0f);
+	colors[ImGuiCol_ButtonHovered] = ImVec4(0.3f, 0.3f, 0.3f, 1.0f);
+	colors[ImGuiCol_FrameBgActive] = ImVec4(0.4f, 0.4f, 0.4f, 1.0f);
+	colors[ImGuiCol_HeaderActive] = ImVec4(0.4f, 0.4f, 0.4f, 1.0f);
+	colors[ImGuiCol_ButtonActive] = ImVec4(0.4f, 0.4f, 0.4f, 1.0f);
+	colors[ImGuiCol_TextSelectedBg] = ImVec4(0.4f, 0.4f, 0.4f, 1.0f);
+	colors[ImGuiCol_MenuBarBg] = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
+	ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
 	ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 2.f);
-	ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing, GImGui->Style.FramePadding.x * 3.f - 2.f);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 2.0f);
+	ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing, GImGui->Style.FramePadding.x * 3.0f - 2.0f);
 	ImGui::GetIO().Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\consola.ttf", 13);
 	int FULL_SCREEN_FLAGS = ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
 		ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_HorizontalScrollbar;
 
 	printf("loading hashes.\n");
-	HashTable* hasht = createHashTable(100000);
+	HashTable* hasht = createHashTable(10000);
 	addhash(hasht, "hashes.bintypes.txt");
 	addhash(hasht, "hashes.binfields.txt");
 	addhash(hasht, "hashes.binhashes.txt");
@@ -361,6 +361,27 @@ int main()
 	char* buf = (char*)calloc(32, 1);
 	myassert(buf == NULL);
 	ImGuiTreeNodeFlags flager = 0;
+
+#ifdef  _DEBUG
+	const char* test = "C:\\Users\\autergame\\Documents\\Visual Studio 2019\\Projects\\BinReader\\Release\\test.bin";
+	packet = decode(_strdup(test), hasht);
+	if (packet != NULL)
+	{
+		treebefore = 3;
+		memcpy(openfile, test, strlen(test));
+		myassert(sprintf(buf, "%" PRIu32, packet->Version) < 0);
+		if (packet->Version >= 2)
+		{
+			for (uint32_t i = 0; i < packet->linkedsize; i++)
+			{
+				packet->LinkedList[i]->id = treebefore;
+				treebefore += 1;
+			}
+		}
+		getstructidbin(packet->entriesMap, &treebefore);
+	}
+#endif 
+
 	while (active)
 	{
 		if (PeekMessageA(&msg, NULL, 0U, 0U, PM_REMOVE))
@@ -375,6 +396,11 @@ int main()
 
 		myassert(sprintf(tmp, "BinReaderGUI - FPS: %1.0f", GImGui->IO.Framerate) < 0);
 		SetWindowTextA(window, tmp);
+
+		if (GImGui->IO.Framerate < 30.f)
+			ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
+		else
+			ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
 
 		glClear(GL_COLOR_BUFFER_BIT);
 
@@ -467,6 +493,7 @@ int main()
 					ofn.nFilterIndex = 1;
 					ofn.lpstrFileTitle = NULL;
 					ofn.nMaxFileTitle = 0;
+					ofn.lpstrDefExt = "bin";
 					ofn.lpstrInitialDir = savepath;
 					ofn.lpstrTitle = "Save Bin File";
 					ofn.Flags = OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
@@ -539,18 +566,30 @@ int main()
 				Map* mp = (Map*)packet->entriesMap->data;
 				for (uint32_t i = 0; i < mp->itemsize; i++)
 				{
-					ImGui::AlignTextToFramePadding();
-					bool treeopen = ImGui::TreeNodeEx((void*)mp->items[i]->id1, ImGuiTreeNodeFlags_Framed | 
-						ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth | flager, "");
-					#ifdef _DEBUG
-					if (ImGui::IsItemHovered())
-						ImGui::SetTooltip("%d", mp->items[i]->id1);
-					#endif
-					ImGui::SameLine(); inputtextmod(hasht, (uint32_t*)mp->items[i]->key->data, mp->items[i]->id2);
-					ImGui::SameLine(); ImGui::Text(":"); ImGui::SameLine();
-					getvaluefromtype(mp->items[i]->value, hasht, flager, &treebefore, &treeopen);
-					if (treeopen)
-						ImGui::TreePop();
+					if (mp->items[i]->key != NULL)
+					{
+						ImVec2 cursor, cursore;
+						ImGui::AlignTextToFramePadding();
+						bool treeopen = ImGui::TreeNodeEx((void*)mp->items[i]->id1, ImGuiTreeNodeFlags_Framed |
+							ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth | flager, "");
+						#ifdef _DEBUG
+						if (ImGui::IsItemHovered())
+							ImGui::SetTooltip("%d", mp->items[i]->id1);
+						#endif
+						ImGui::SameLine(); inputtextmod(hasht, (uint32_t*)mp->items[i]->key->data, mp->items[i]->key->id);
+						ImGui::SameLine(); ImGui::Text(":"); ImGui::SameLine();
+						getvaluefromtype(mp->items[i]->value, hasht, flager, &treebefore, &treeopen, &cursor);
+						cursore = ImGui::GetCursorPos();
+						ImGui::SetCursorPos(cursor);
+						if (binfielddelete(mp->items[i]->id2))
+						{
+							cleanbin(mp->items[i]->key);
+							cleanbin(mp->items[i]->value);
+							mp->items[i]->key = NULL;
+							mp->items[i]->value = NULL;							
+						}
+						ImGui::SetCursorPos(cursore);
+					}
 				}
 				if (ImGui::Button("Add new item"))
 				{
@@ -568,9 +607,13 @@ int main()
 		ImGui::End();
 		#ifdef _DEBUG
 		ImGui::ShowMetricsWindow();
-		ImGui::Begin("Dear ImGui Style Editor");
+		ImGui::Begin("Dear ImGui Style Editor", NULL, ImGuiWindowFlags_AlwaysAutoResize);
 		ImGui::ShowStyleEditor();
 		ImGui::End();
+		ImGui::SetWindowCollapsed("Dear ImGui Style Editor", true, ImGuiCond_Once);
+		ImGui::SetWindowCollapsed("Dear ImGui Metrics/Debugger", true, ImGuiCond_Once);
+		ImGui::SetWindowPos("Dear ImGui Style Editor", ImVec2(width/1.75f, 73), ImGuiCond_Once);
+		ImGui::SetWindowPos("Dear ImGui Metrics/Debugger", ImVec2(width/1.75f, 50), ImGuiCond_Once);
 		#endif
 		ImGui::Render();
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
