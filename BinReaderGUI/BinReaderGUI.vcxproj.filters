@@ -42,7 +42,7 @@
     <ClCompile Include="libs\imgui\imgui_impl_glfw.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="libs\tracy\TracyClient.cpp">
+    <ClCompile Include="TracyClient.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
