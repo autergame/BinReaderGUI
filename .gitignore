@@ -9,3 +9,4 @@ BinReaderGUI/DebugWR/
 BinReaderGUI/Release/
 BinReaderGUI/x64/Debug/
 BinReaderGUI/x64/Release/
+BinReaderGUI/libs/tracy

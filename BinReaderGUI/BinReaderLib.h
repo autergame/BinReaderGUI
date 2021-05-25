@@ -1,10 +1,18 @@
 //author https://github.com/autergame
 #define _CRT_SECURE_NO_WARNINGS
 #define IMGUI_DEFINE_MATH_OPERATORS
+#define GLFW_EXPOSE_NATIVE_WIN32
 #pragma comment(lib, "opengl32")
+#pragma comment(lib, "glfw3")
+#ifdef TRACY_ENABLE
+    #include <tracy/Tracy.hpp>
+#endif
+#include <Windows.h>
 #include <glad/glad.h>
+#include <GLFW/glfw3.h>
+#include <GLFW/glfw3native.h>
 #include <imgui/imgui.h>
-#include <imgui/imgui_impl_win32.h>
+#include <imgui/imgui_impl_glfw.h>
 #include <imgui/imgui_impl_opengl3.h>
 #include <imgui/imgui_internal.h>
 #include <inttypes.h>
@@ -15,7 +23,7 @@
 
 void _assert(char const* msg, char const* file, unsigned line)
 {
-    printf("ERROR: %s %s %d\n", msg, file, line);
+    fprintf(stderr, "ERROR: %s %s %d\n", msg, file, line);
     scanf("press enter to exit.");
     exit(1);
 }
@@ -164,11 +172,11 @@ struct node
 
 typedef struct HashTable
 {
-    uint64_t size;
+    size_t size;
     node** list;
 } HashTable;
 
-HashTable* createHashTable(uint64_t size)
+HashTable* createHashTable(size_t size)
 {
     HashTable* t = (HashTable*)malloc(sizeof(HashTable));
     myassert(t == NULL);
@@ -301,6 +309,7 @@ typedef struct BinField
 
 typedef struct Pair
 {
+    ImGuiID idim;
     uintptr_t id1;
     uintptr_t id2;
     BinField* key;
@@ -309,6 +318,7 @@ typedef struct Pair
 
 typedef struct Field
 {
+    ImGuiID idim;
     uintptr_t id1;
     uintptr_t id2;
     uintptr_t id3;
@@ -318,6 +328,7 @@ typedef struct Field
 
 typedef struct IdField
 {
+    ImGuiID idim;
     uintptr_t id1;
     uintptr_t id2;
     BinField* value;
@@ -337,6 +348,8 @@ typedef struct PointerOrEmbed
     int current1;
     int current2;
     int current3;
+    uintptr_t id;
+    ImGuiID idim;
     uint32_t name;
     Field** items;
     uint16_t itemsize;
@@ -718,7 +731,7 @@ void getstructidbin(BinField* value, uintptr_t* tree)
                 if (cs->items[i]->id1 == 0)
                 {
                     cs->items[i]->id1 = *tree;
-                    if (cs->valueType == CONTAINER || cs->valueType == STRUCT || cs->valueType == OPTION || cs->valueType == MAP)
+                    if ((cs->valueType >= CONTAINER && cs->valueType <= EMBEDDED) || cs->valueType == OPTION || cs->valueType == MAP)
                     {
                         cs->items[i]->id2 = *tree + 1;
                         *tree += 1;
@@ -736,9 +749,11 @@ void getstructidbin(BinField* value, uintptr_t* tree)
             if (value->id == 0)
             {
                 value->id = *tree;
-                *tree += 5;
+                *tree += 2;
             }
             PointerOrEmbed* pe = (PointerOrEmbed*)value->data;
+            pe->id = *tree;
+            *tree += 2;
             if (pe->name != 0)
             {
                 for (uint16_t i = 0; i < pe->itemsize; i++)
@@ -781,6 +796,74 @@ void getstructidbin(BinField* value, uintptr_t* tree)
                     getstructidbin(mp->items[i]->key, tree);
                 if (mp->items[i]->value != NULL)
                     getstructidbin(mp->items[i]->value, tree);
+            }
+            break;
+        }
+    }
+}
+
+void settreeopenstate(BinField* value, ImGuiWindow* window)
+{
+    switch (value->typebin)
+    {
+        case OPTION:
+        case STRUCT:
+        case CONTAINER:
+        {
+            ImGuiStorage* storage = window->DC.StateStorage;
+            ContainerOrStructOrOption* cs = (ContainerOrStructOrOption*)value->data;
+            for (uint32_t i = 0; i < cs->itemsize; i++)
+            {
+                if (cs->items[i]->value != NULL)
+                {
+                    if ((cs->valueType >= CONTAINER && cs->valueType <= EMBEDDED) || cs->valueType == OPTION || cs->valueType == MAP)
+                    {
+                        storage->SetInt(cs->items[i]->idim, 0);
+                        settreeopenstate(cs->items[i]->value, window);
+                    }
+                }
+            }
+            break;
+        }
+        case POINTER:
+        case EMBEDDED:
+        {
+            ImGuiStorage* storage = window->DC.StateStorage;
+            PointerOrEmbed* pe = (PointerOrEmbed*)value->data;
+            if (pe->name != 0)
+            {
+                storage->SetInt(pe->idim, 0);
+                for (uint16_t i = 0; i < pe->itemsize; i++)
+                {
+                    if (pe->items[i]->value != NULL)
+                    {
+                        Type typi = pe->items[i]->value->typebin;
+                        if ((typi >= CONTAINER && typi <= EMBEDDED) || typi == OPTION || typi == MAP)
+                        {
+                            storage->SetInt(pe->items[i]->idim, 0);
+                            settreeopenstate(pe->items[i]->value, window);
+                        }
+                    }
+                }
+            }
+            break;
+        }
+        case MAP:
+        {
+            Map* mp = (Map*)value->data;
+            ImGuiStorage* storage = window->DC.StateStorage;
+            for (uint32_t i = 0; i < mp->itemsize; i++)
+            {
+                if (mp->items[i]->key != NULL)
+                {
+                    Type typi = mp->items[i]->key->typebin;
+                    Type type = mp->items[i]->value->typebin;
+                    storage->SetInt(mp->items[i]->idim, 0);
+                    if ((typi >= CONTAINER && typi <= EMBEDDED) || typi == OPTION || typi == MAP)             
+                        settreeopenstate(mp->items[i]->key, window);
+                    if ((type >= CONTAINER && type <= EMBEDDED) || type == OPTION || type == MAP)
+                        settreeopenstate(mp->items[i]->value, window);
+                }
             }
             break;
         }
@@ -863,7 +946,7 @@ bool ButtonExe(uintptr_t ide)
 
     ImGuiContext& g = *GImGui;
     const ImGuiStyle& style = g.Style;
-    const ImGuiID id = window->GetID(ide);
+    const ImGuiID id = window->GetID((void*)ide);
 
     ImVec2 pos = ImVec2(window->DC.CursorPos.x - g.FontSize / 2.0f, window->DC.CursorPos.y);
     ImVec2 size = ImVec2(g.FontSize, g.FontSize) + g.Style.FramePadding * 2.0f;
@@ -895,16 +978,22 @@ bool binfielddelete(uintptr_t id)
 {
     bool ret = false;
     bool retb = ButtonExe(id);
+    #ifdef _DEBUG
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Delete item? %d", id+1);
+    #else
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Delete item?");
+    #endif
+
     if (retb)
-        ImGui::OpenPopupEx(GImGui->CurrentWindow->GetID(id+1));
+        ImGui::OpenPopupEx(GImGui->CurrentWindow->GetID((void*)(id+1)));
     if (GImGui->OpenPopupStack.Size <= GImGui->BeginPopupStack.Size)
     {
         GImGui->NextWindowData.ClearFlags();
         return false;
     }
-    if (ImGui::BeginPopupEx(GImGui->CurrentWindow->GetID(id+1),
+    if (ImGui::BeginPopupEx(GImGui->CurrentWindow->GetID((void*)(id+1)),
         ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings))
     {
         ImGui::Text("Are you sure?");
@@ -921,9 +1010,36 @@ bool binfielddelete(uintptr_t id)
     return ret;
 }
 
-void getvaluefromtype(BinField* value, HashTable* hasht, 
-    ImGuiTreeNodeFlags flags, uintptr_t* tree, bool* poe = NULL, ImVec2* cursor = NULL)
+bool IsItemVisibleClip(ImGuiWindow* window)
 {
+    ImVec2 clipmin = window->ClipRect.Min;
+    ImVec2 clipmax = window->ClipRect.Max;
+    ImVec2 lastmin = window->DC.LastItemRect.Min;
+    clipmin.x -= 100; clipmin.y -= 100; clipmax.x += 100; clipmax.y += 100;
+    return lastmin.x > clipmin.x && lastmin.y > clipmin.y && lastmin.x < clipmax.x && lastmin.y < clipmax.y;
+}
+
+bool IsItemVisible(ImGuiWindow* window)
+{
+    ImVec2 cursor = window->DC.CursorPos;
+    ImVec2 clipmin = window->ClipRect.Min;
+    ImVec2 clipmax = window->ClipRect.Max;
+    clipmin.x -= 100; clipmin.y -= 100; clipmax.x += 100; clipmax.y += 100;
+    return cursor.x > clipmin.x && cursor.y > clipmin.y && cursor.x < clipmax.x && cursor.y < clipmax.y;
+}
+
+void NewLine()
+{
+    ImGui::ItemSize(ImVec2(0.0f, ImGui::GetFontSize()));
+}
+
+void getvaluefromtype(BinField* value, HashTable* hasht, uintptr_t* tree,
+    ImGuiWindow* window, bool hasbeopened, bool* poe = NULL, ImVec2* cursor = NULL)
+{
+    #ifdef TRACY_ENABLE
+        ZoneNamedN(gvftz, "getvaluefromtype", true);
+        gvftz.Text(Type_strings[value->typebin], strlen(Type_strings[value->typebin]));
+    #endif
     const char* fmt = Type_fmt[value->typebin];
     if (fmt != NULL)
     {
@@ -936,9 +1052,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht,
             free(string);
         }
         free(buf);
-    }
-    else
-    {
+    } else {
         switch (value->typebin)
         {
             case NONE:
@@ -1008,6 +1122,10 @@ void getvaluefromtype(BinField* value, HashTable* hasht,
             case CONTAINER:
             {
                 ContainerOrStructOrOption* cs = (ContainerOrStructOrOption*)value->data;
+                #ifdef TRACY_ENABLE
+                    ZoneNamedN(cspz, "ContainerOrStructOrOption", true);
+                    cspz.Text(Type_strings[cs->valueType], strlen(Type_strings[cs->valueType]));
+                #endif
                 if (cs->valueType == CONTAINER || cs->valueType == STRUCT || cs->valueType == OPTION || cs->valueType == MAP)
                 {
                     for (uint32_t i = 0; i < cs->itemsize; i++)
@@ -1015,63 +1133,122 @@ void getvaluefromtype(BinField* value, HashTable* hasht,
                         if (cs->items[i]->value != NULL)
                         {
                             ImGui::AlignTextToFramePadding();
+                            if (hasbeopened)
+                                ImGui::SetNextItemOpen(true);
                             bool treeopen = ImGui::TreeNodeEx((void*)(cs->items[i]->id1), ImGuiTreeNodeFlags_Framed |
-                                ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth | flags, "");
+                            ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth, "");
+                            cs->items[i]->idim = window->IDStack.back();
                             #ifdef _DEBUG
                             if (ImGui::IsItemHovered())
                                 ImGui::SetTooltip("%d", cs->items[i]->id1);
                             #endif
-                            ImGui::SameLine(); ImGui::Text("%s", Type_strings[cs->valueType]);
-                            ImGui::SameLine(0, 1); getarraytype(cs->items[i]->value);
-                            ImGui::SameLine(); getarraycount(cs->items[i]->value);
-                            ImGui::SameLine();
-                            if (binfielddelete(cs->items[i]->id2))
+                            if (IsItemVisibleClip(window))
                             {
-                                cleanbin(cs->items[i]->value);
-                                cs->items[i]->value = NULL;
-                                if (treeopen)
-                                    ImGui::TreePop();
-                            }
-                            else
-                            {
-                                if (treeopen)
+                                ImGui::SameLine(); ImGui::Text("%s", Type_strings[cs->valueType]);
+                                ImGui::SameLine(0, 1); getarraytype(cs->items[i]->value);
+                                ImGui::SameLine(); getarraycount(cs->items[i]->value);
+                                ImGui::SameLine();
+                                if (binfielddelete(cs->items[i]->id2))
                                 {
-                                    ImGui::Indent();
-                                    getvaluefromtype(cs->items[i]->value, hasht, flags, tree);
-                                    ImGui::Unindent();
-                                    ImGui::TreePop();
+                                    cleanbin(cs->items[i]->value);
+                                    cs->items[i]->value = NULL;
+                                    if (treeopen)
+                                        ImGui::TreePop();
                                 }
+                                else {
+                                    if (treeopen)
+                                    {
+                                        ImGui::Indent();
+                                        getvaluefromtype(cs->items[i]->value, hasht, tree, window, hasbeopened);
+                                        ImGui::Unindent();
+                                        ImGui::TreePop();
+                                    }
+                                }
+                            } else if (treeopen) {
+                                ImGui::Indent();
+                                getvaluefromtype(cs->items[i]->value, hasht, tree, window, hasbeopened);
+                                ImGui::Unindent();
+                                ImGui::TreePop();
                             }
                         }
                     }
-                }
-                else
-                {
+                } else if (cs->valueType == POINTER || cs->valueType == EMBEDDED) {
                     for (uint32_t i = 0; i < cs->itemsize; i++)
                     {
                         if (cs->items[i]->value != NULL)
                         {
                             ImGui::AlignTextToFramePadding();
-                            getvaluefromtype(cs->items[i]->value, hasht, flags, tree);
+                            if (hasbeopened)
+                                ImGui::SetNextItemOpen(true);
+                            bool treeopen = ImGui::TreeNodeEx((void*)(cs->items[i]->id1), ImGuiTreeNodeFlags_Framed |
+                                ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth, "");
+                            cs->items[i]->idim = window->IDStack.back();
+                            #ifdef _DEBUG
+                            if (ImGui::IsItemHovered())
+                                ImGui::SetTooltip("%d", cs->items[i]->id1);
+                            #endif
                             ImGui::SameLine();
-                            if (binfielddelete(cs->items[i]->id1))
+                            if (IsItemVisibleClip(window))
+                            {                                
+                                ImVec2 cursore, cursor;
+                                getvaluefromtype(cs->items[i]->value, hasht, tree, window, hasbeopened, &treeopen, &cursor);
+                                cursore = ImGui::GetCursorPos();
+                                ImGui::SetCursorPos(cursor);
+                                if (binfielddelete(cs->items[i]->id2))
+                                {
+                                    cleanbin(cs->items[i]->value);
+                                    cs->items[i]->value = NULL;
+                                }
+                                ImGui::SetCursorPos(cursore);
+                            } else {
+                                getvaluefromtype(cs->items[i]->value, hasht, tree, window, hasbeopened, &treeopen);
+                            }
+                        }
+                    }           
+                } else {
+                    for (uint32_t i = 0; i < cs->itemsize; i++)
+                    {
+                        if (cs->items[i]->value != NULL)
+                        {
+                            if (IsItemVisible(window))
                             {
-                                cleanbin(cs->items[i]->value);
-                                cs->items[i]->value = NULL;
+                                ImGui::AlignTextToFramePadding();
+                                getvaluefromtype(cs->items[i]->value, hasht, tree, window, hasbeopened);
+                                ImGui::SameLine();
+                                if (binfielddelete(cs->items[i]->id1))
+                                {
+                                    cleanbin(cs->items[i]->value);
+                                    cs->items[i]->value = NULL;
+                                }
+                            } else {
+                                if (cs->valueType == MTX44)
+                                {
+                                    NewLine();
+                                    NewLine();
+                                    NewLine();
+                                    NewLine();
+                                } else {
+                                    NewLine();
+                                }
                             }
                         }
                     }
                 }
-                int typi = cs->valueType;
-                bool add = ImGui::Button("Add new item");
-                binfieldadd(value->id, &typi, &cs->current2, &cs->current3);
-                if (add)
+                if (IsItemVisible(window))
                 {
-                    cs->itemsize += 1;
-                    cs->items = (IdField**)realloc(cs->items, cs->itemsize * sizeof(IdField*)); myassert(cs->items == NULL);
-                    cs->items[cs->itemsize-1] = (IdField*)calloc(1, sizeof(IdField)); myassert(cs->items[cs->itemsize-1] == NULL);
-                    cs->items[cs->itemsize-1]->value = binfieldclean(cs->valueType, (Type)cs->current2, (Type)cs->current3);
-                    getstructidbin(value, tree);
+                    int typi = cs->valueType;
+                    bool add = ImGui::Button("Add new item");
+                    binfieldadd(value->id, &typi, &cs->current2, &cs->current3);
+                    if (add)
+                    {
+                        cs->itemsize += 1;
+                        cs->items = (IdField**)realloc(cs->items, cs->itemsize * sizeof(IdField*)); myassert(cs->items == NULL);
+                        cs->items[cs->itemsize - 1] = (IdField*)calloc(1, sizeof(IdField)); myassert(cs->items[cs->itemsize - 1] == NULL);
+                        cs->items[cs->itemsize - 1]->value = binfieldclean(cs->valueType, (Type)cs->current2, (Type)cs->current3);
+                        getstructidbin(value, tree);
+                    }
+                } else {
+                    NewLine();
                 }
                 break;
             }
@@ -1079,31 +1256,45 @@ void getvaluefromtype(BinField* value, HashTable* hasht,
             case EMBEDDED:
             {
                 PointerOrEmbed* pe = (PointerOrEmbed*)value->data;
+                #ifdef TRACY_ENABLE
+                    ZoneNamedN(pez, "PointerOrEmbed", true);               
+                #endif
                 if (pe->name != NULL)
                 {
                     bool treeopen = false;
                     ImGui::AlignTextToFramePadding();
                     if (poe == NULL)
                     {
-                        treeopen = ImGui::TreeNodeEx((void*)value->id, ImGuiTreeNodeFlags_Framed | 
-                            ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth | flags, "");
+                        if (hasbeopened)
+                            ImGui::SetNextItemOpen(true);
+                        treeopen = ImGui::TreeNodeEx((void*)pe->id, ImGuiTreeNodeFlags_Framed | 
+                            ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth, "");
+                        pe->idim = window->IDStack.back();
                         #ifdef _DEBUG
                         if (ImGui::IsItemHovered())
-                            ImGui::SetTooltip("%d", value->id);
+                            ImGui::SetTooltip("%d", pe->id);
                         #endif
-                    }
-                    else
-                    {
+                        if (IsItemVisibleClip(window))
+                        {
+                            ImGui::SameLine();
+                            inputtextmod(hasht, &pe->name, pe->id + 1);
+                            ImGui::SameLine(); ImGui::Text(": %s", Type_strings[value->typebin]);
+                            ImGui::SameLine(); getarraycount(value);
+                        }
+                        else {
+                            NewLine();
+                        }
+                    } else {
                         treeopen = *poe;
+                        if (IsItemVisible(window))
+                        {
+                            ImGui::SameLine();
+                            inputtextmod(hasht, &pe->name, pe->id + 1);
+                            ImGui::SameLine(); getarraycount(value);
+                        } else {
+                            NewLine();
+                        }
                     }
-                    if (poe == NULL)
-                        ImGui::SameLine();
-                    inputtextmod(hasht, &pe->name, value->id+1);
-                    if (poe == NULL)
-                    {
-                        ImGui::SameLine(); ImGui::Text(": %s", Type_strings[value->typebin]);
-                    }
-                    ImGui::SameLine(); getarraycount(value);
                     if (cursor != NULL)
                     {
                         ImVec2 old = ImGui::GetCursorPos();
@@ -1118,88 +1309,121 @@ void getvaluefromtype(BinField* value, HashTable* hasht,
                             if (pe->items[i]->value != NULL)
                             {
                                 Type typi = pe->items[i]->value->typebin;
+                                #ifdef TRACY_ENABLE
+                                    pez.Text(Type_strings[typi], strlen(Type_strings[typi]));
+                                #endif
                                 if ((typi >= CONTAINER && typi <= EMBEDDED) || typi == OPTION || typi == MAP)
                                 {
                                     ImGui::AlignTextToFramePadding();
+                                    if (hasbeopened)
+                                        ImGui::SetNextItemOpen(true);
                                     bool treeopene = ImGui::TreeNodeEx((void*)(pe->items[i]->id1), ImGuiTreeNodeFlags_Framed |
-                                        ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth | flags, "");
+                                        ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth, "");
+                                    pe->items[i]->idim = window->IDStack.back();
                                     #ifdef _DEBUG
                                     if (ImGui::IsItemHovered())
                                         ImGui::SetTooltip("%d", pe->items[i]->id1);
                                     #endif
-                                    ImGui::SameLine(); inputtextmod(hasht, &pe->items[i]->key, pe->items[i]->id2);
-                                    if (typi != POINTER && typi != EMBEDDED)
+                                    if (IsItemVisibleClip(window))
                                     {
-                                        ImGui::SameLine(); ImGui::Text(": %s", Type_strings[typi]);
-                                        ImGui::SameLine(0, 1); getarraytype(pe->items[i]->value);
-                                        ImGui::SameLine(); getarraycount(pe->items[i]->value);
-                                        ImGui::SameLine();
-                                        if (binfielddelete(pe->items[i]->id3))
+                                        ImGui::SameLine(); inputtextmod(hasht, &pe->items[i]->key, pe->items[i]->id2);
+                                        if (typi != POINTER && typi != EMBEDDED)
                                         {
-                                            cleanbin(pe->items[i]->value);
-                                            pe->items[i]->value = NULL;
-                                            if (treeopene)
+                                            ImGui::SameLine(); ImGui::Text(": %s", Type_strings[typi]);
+                                            ImGui::SameLine(0, 1); getarraytype(pe->items[i]->value);
+                                            ImGui::SameLine(); getarraycount(pe->items[i]->value);
+                                            ImGui::SameLine();
+                                            if (binfielddelete(pe->items[i]->id3))
+                                            {
+                                                cleanbin(pe->items[i]->value);
+                                                pe->items[i]->value = NULL;
+                                                if (treeopene)
+                                                    ImGui::TreePop();
+                                            } else if (treeopene) {
+                                                ImGui::Indent();
+                                                getvaluefromtype(pe->items[i]->value, hasht, tree, window, hasbeopened);
+                                                ImGui::Unindent();
                                                 ImGui::TreePop();
+                                            }
+                                        } else {
+                                            ImVec2 cursore, cursor;
+                                            ImGui::SameLine(); ImGui::Text(":"); ImGui::SameLine();
+                                            getvaluefromtype(pe->items[i]->value, hasht, tree, window, hasbeopened, &treeopene, &cursor);
+                                            cursore = ImGui::GetCursorPos();
+                                            ImGui::SetCursorPos(cursor);
+                                            if (binfielddelete(pe->items[i]->id3))
+                                            {
+                                                cleanbin(pe->items[i]->value);
+                                                pe->items[i]->value = NULL;
+                                            }
+                                            ImGui::SetCursorPos(cursore);
                                         }
-                                        else
+                                    } else {
+                                        if (typi != POINTER && typi != EMBEDDED)
                                         {
                                             if (treeopene)
                                             {
                                                 ImGui::Indent();
-                                                getvaluefromtype(pe->items[i]->value, hasht, flags, tree);
+                                                getvaluefromtype(pe->items[i]->value, hasht, tree, window, hasbeopened);
                                                 ImGui::Unindent();
                                                 ImGui::TreePop();
                                             }
+                                        } else {
+                                            ImGui::SameLine();
+                                            getvaluefromtype(pe->items[i]->value, hasht, tree, window, hasbeopened, &treeopene);
                                         }
                                     }
-                                    else
+                                } else {
+                                    if (IsItemVisible(window))
                                     {
-                                        ImVec2 cursore, cursor;
-                                        ImGui::SameLine(); ImGui::Text(":"); ImGui::SameLine();
-                                        getvaluefromtype(pe->items[i]->value, hasht, flags, tree, &treeopene, &cursor);
-                                        cursore = ImGui::GetCursorPos();
-                                        ImGui::SetCursorPos(cursor);
-                                        if (binfielddelete(pe->items[i]->id3))
+                                        ImGui::AlignTextToFramePadding();
+                                        inputtextmod(hasht, &pe->items[i]->key, pe->items[i]->id1);
+                                        ImGui::SameLine(); ImGui::Text(": %s", Type_strings[typi]);
+                                        ImGui::SameLine(); ImGui::Text("="); ImGui::SameLine();
+                                        getvaluefromtype(pe->items[i]->value, hasht, tree, window, hasbeopened);
+                                        ImGui::SameLine();
+                                        if (binfielddelete(pe->items[i]->id2))
                                         {
                                             cleanbin(pe->items[i]->value);
                                             pe->items[i]->value = NULL;
                                         }
-                                        ImGui::SetCursorPos(cursore);
-                                    }
-                                }
-                                else
-                                {
-                                    ImGui::AlignTextToFramePadding();
-                                    inputtextmod(hasht, &pe->items[i]->key, pe->items[i]->id1);
-                                    ImGui::SameLine(); ImGui::Text(": %s", Type_strings[typi]);
-                                    ImGui::SameLine(); ImGui::Text("="); ImGui::SameLine();
-                                    getvaluefromtype(pe->items[i]->value, hasht, flags, tree);
-                                    ImGui::SameLine();
-                                    if (binfielddelete(pe->items[i]->id2))
-                                    {
-                                        cleanbin(pe->items[i]->value);
-                                        pe->items[i]->value = NULL;
+                                    } else {
+                                        if (typi == MTX44)
+                                        {
+                                            NewLine();
+                                            NewLine();
+                                            NewLine();
+                                            NewLine();
+                                        } else {
+                                            NewLine();
+                                        }
                                     }
                                 }
                             }
                         }
-                        bool add = ImGui::Button("Add new item");
-                        binfieldadd(value->id+2, &pe->current1, &pe->current2, &pe->current3, true);
-                        if (add)
+                        if (IsItemVisible(window))
                         {
-                            pe->itemsize += 1;
-                            pe->items = (Field**)realloc(pe->items, pe->itemsize * sizeof(Field*)); myassert(pe->items == NULL);
-                            pe->items[pe->itemsize-1] = (Field*)calloc(1, sizeof(Field)); myassert(pe->items[pe->itemsize-1] == NULL);
-                            pe->items[pe->itemsize-1]->value = binfieldclean((Type)pe->current1, (Type)pe->current2, (Type)pe->current3);
-                            getstructidbin(value, tree);
+                            bool add = ImGui::Button("Add new item");
+                            binfieldadd(value->id + 2, &pe->current1, &pe->current2, &pe->current3, true);
+                            if (add)
+                            {
+                                pe->itemsize += 1;
+                                pe->items = (Field**)realloc(pe->items, pe->itemsize * sizeof(Field*)); myassert(pe->items == NULL);
+                                pe->items[pe->itemsize - 1] = (Field*)calloc(1, sizeof(Field)); myassert(pe->items[pe->itemsize - 1] == NULL);
+                                pe->items[pe->itemsize - 1]->value = binfieldclean((Type)pe->current1, (Type)pe->current2, (Type)pe->current3);
+                                getstructidbin(value, tree);
+                            }
+                        } else {
+                            NewLine();
                         }
                         ImGui::Unindent();
                         ImGui::TreePop();
                     }
-                }
-                else
-                {
-                    inputtextmod(hasht, &pe->name, value->id);
+                } else {
+                    if (IsItemVisible(window))
+                        inputtextmod(hasht, &pe->name, value->id);
+                    else
+                        NewLine();
                     if (poe != NULL)
                         if (*poe == true)
                             ImGui::TreePop();
@@ -1209,26 +1433,51 @@ void getvaluefromtype(BinField* value, HashTable* hasht,
             case MAP:
             {
                 Map* mp = (Map*)value->data;
+                #ifdef TRACY_ENABLE
+                    ZoneNamedN(mpz, "Map", true);
+                #endif
                 for (uint32_t i = 0; i < mp->itemsize; i++)
                 {
                     if (mp->items[i]->key != NULL)
                     {
                         ImGui::AlignTextToFramePadding();
+                        if (hasbeopened)
+                            ImGui::SetNextItemOpen(true);
                         bool treeopen = ImGui::TreeNodeEx((void*)(mp->items[i]->id1), ImGuiTreeNodeFlags_Framed |
-                            ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth | flags, "");
+                            ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth, "");  
+                        mp->items[i]->idim = window->IDStack.back();
                         #ifdef _DEBUG
                         if (ImGui::IsItemHovered())
                             ImGui::SetTooltip("%d", mp->items[i]->id1);
                         #endif
                         Type typi = mp->items[i]->key->typebin;
-                        if ((typi <= WADENTRYLINK) || typi == LINK || typi == FLAG)
+                        Type typd = mp->items[i]->value->typebin;
+                        #ifdef TRACY_ENABLE
+                            mpz.Text(Type_strings[typi], strlen(Type_strings[typi]));
+                            mpz.Text(Type_strings[typd], strlen(Type_strings[typd]));
+                        #endif
+                        if (IsItemVisibleClip(window))
                         {
-                            ImGui::SameLine(); ImGui::Text("%s", Type_strings[typi]);
-                            ImGui::SameLine(); ImGui::Text("=");
+                            if ((typi <= WADENTRYLINK) || typi == LINK || typi == FLAG)
+                            {
+                                ImGui::SameLine(); ImGui::Text("%s", Type_strings[typi]);
+                                ImGui::SameLine(); ImGui::Text("=");
+                            }
+                            ImGui::SameLine();
+                            getvaluefromtype(mp->items[i]->key, hasht, tree, window, hasbeopened);
+                        } else if ((typi >= CONTAINER && typi <= EMBEDDED) || typi == OPTION || typi == MAP) {
+                            ImGui::SameLine();
+                            getvaluefromtype(mp->items[i]->key, hasht, tree, window, hasbeopened);
+                        } else if (typi == MTX44) {
+                            NewLine();
+                            NewLine();
+                            NewLine();
+                            NewLine();
+                        } else {
+                            NewLine();
                         }
-                        ImGui::SameLine(); getvaluefromtype(mp->items[i]->key, hasht, flags, tree);
                         ImGui::SameLine();
-                        if (binfielddelete(mp->items[i]->id2))
+                        if (IsItemVisible(window) && binfielddelete(mp->items[i]->id2))
                         {
                             cleanbin(mp->items[i]->key);
                             cleanbin(mp->items[i]->value);
@@ -1236,39 +1485,53 @@ void getvaluefromtype(BinField* value, HashTable* hasht,
                             mp->items[i]->value = NULL;
                             if (treeopen)
                                 ImGui::TreePop();
-                        }
-                        else
-                        {
-                            if (treeopen)
+                        } else if (treeopen) {
+                            if (IsItemVisible(window))
                             {
                                 ImGui::Indent();
                                 ImGui::AlignTextToFramePadding();
-                                Type typd = mp->items[i]->value->typebin;
                                 if ((typd <= WADENTRYLINK) || typd == LINK || typd == FLAG)
-                                {
+                                {                                
                                     ImGui::Text("%s", Type_strings[typd]);
                                     ImGui::SameLine(); ImGui::Text("="); ImGui::SameLine();
                                 }
-                                getvaluefromtype(mp->items[i]->value, hasht, flags, tree);
+                                getvaluefromtype(mp->items[i]->value, hasht, tree, window, hasbeopened);
                                 ImGui::Unindent();
-                                ImGui::TreePop();
+                            } else if ((typd >= CONTAINER && typd <= EMBEDDED) || typd == OPTION || typd == MAP) {
+                                ImGui::Indent();
+                                ImGui::AlignTextToFramePadding();
+                                getvaluefromtype(mp->items[i]->value, hasht, tree, window, hasbeopened);
+                                ImGui::Unindent();
+                            } else if (typd == MTX44) {
+                                NewLine();
+                                NewLine();
+                                NewLine();
+                                NewLine();
+                            } else {
+                                NewLine();
                             }
+                            ImGui::TreePop();
                         }
                     }
                 }
-                int typi = mp->keyType;
-                int typf = mp->valueType;
-                bool add = ImGui::Button("Add new item");
-                binfieldadd(value->id, &typi, &mp->current2, &mp->current3);
-                binfieldadd(value->id+1, &typf, &mp->current4, &mp->current5);
-                if (add)
+                if (IsItemVisible(window))
                 {
-                    mp->itemsize += 1;
-                    mp->items = (Pair**)realloc(mp->items, mp->itemsize * sizeof(Pair*)); myassert(mp->items == NULL);
-                    mp->items[mp->itemsize-1] = (Pair*)calloc(1, sizeof(Pair)); myassert(mp->items[mp->itemsize-1] == NULL);
-                    mp->items[mp->itemsize-1]->key = binfieldclean(mp->keyType, (Type)mp->current2, (Type)mp->current3);
-                    mp->items[mp->itemsize-1]->value = binfieldclean(mp->valueType, (Type)mp->current4, (Type)mp->current5);
-                    getstructidbin(value, tree);
+                    int typi = mp->keyType;
+                    int typf = mp->valueType;
+                    bool add = ImGui::Button("Add new item");
+                    binfieldadd(value->id, &typi, &mp->current2, &mp->current3);
+                    binfieldadd(value->id + 1, &typf, &mp->current4, &mp->current5);
+                    if (add)
+                    {
+                        mp->itemsize += 1;
+                        mp->items = (Pair**)realloc(mp->items, mp->itemsize * sizeof(Pair*)); myassert(mp->items == NULL);
+                        mp->items[mp->itemsize - 1] = (Pair*)calloc(1, sizeof(Pair)); myassert(mp->items[mp->itemsize - 1] == NULL);
+                        mp->items[mp->itemsize - 1]->key = binfieldclean(mp->keyType, (Type)mp->current2, (Type)mp->current3);
+                        mp->items[mp->itemsize - 1]->value = binfieldclean(mp->valueType, (Type)mp->current4, (Type)mp->current5);
+                        getstructidbin(value, tree);
+                    }
+                } else {
+                    NewLine();
                 }
                 break;
             }
@@ -1814,8 +2077,6 @@ int encode(char* filepath, PacketBin* packet)
     for (uint32_t i = 0; i < entriesMap->itemsize; i++)
         if (entriesMap->items[i]->key != NULL)
             memfwrite(&((PointerOrEmbed*)entriesMap->items[i]->value->data)->name, 4, str);
-
-     //TODO: FIX WRONG WRITE 
 
     for (uint32_t i = 0; i < entriesMap->itemsize; i++)
     {
