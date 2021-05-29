@@ -29,6 +29,41 @@ void _assert(char const* msg, char const* file, unsigned line)
 }
 #define myassert(expression) if (expression) { _assert(#expression, __FILE__, __LINE__); }
 
+void* callocb(size_t count, size_t size)
+{
+    void* p = calloc(count, size);
+    myassert(p == NULL);
+#ifdef TRACY_ENABLE
+    TracyAlloc(p, size);
+#endif
+    return p;
+}
+
+void* reallocb(void* p, size_t size)
+{
+    void* pe = realloc(p, size);
+    myassert(pe == NULL);
+    return pe;
+}
+
+void* mallocb(size_t size)
+{
+    void* p = malloc(size);
+    myassert(p == NULL);
+#ifdef TRACY_ENABLE
+    TracyAlloc(p, size);
+#endif
+    return p;
+}
+
+void freeb(void* p)
+{
+#ifdef TRACY_ENABLE
+    TracyFree(p);
+#endif
+    free(p);
+}
+
 #pragma region FNV1Hash XXHash HashTable 
 
 uint32_t FNV1Hash(char* str)
@@ -178,11 +213,9 @@ typedef struct HashTable
 
 HashTable* createHashTable(size_t size)
 {
-    HashTable* t = (HashTable*)malloc(sizeof(HashTable));
-    myassert(t == NULL);
+    HashTable* t = (HashTable*)callocb(1, sizeof(HashTable));
     t->size = size;
-    t->list = (node**)calloc(size, sizeof(node*));
-    myassert(t->list == NULL);
+    t->list = (node**)callocb(size, sizeof(node*));
     return t;
 }
 
@@ -190,8 +223,7 @@ void insertHashTable(HashTable* t, uint64_t key, char* val)
 {
     uint64_t pos = key % t->size;
     node* list = t->list[pos];
-    node* newNode = (node*)malloc(sizeof(node));
-    myassert(newNode == NULL);
+    node* newNode = (node*)callocb(1, sizeof(node));
     node* temp = list;
     while (temp) {
         if (temp->key == key) {
@@ -230,8 +262,7 @@ int addhash(HashTable* map, const char* filename, bool xxhash = false)
     fseek(file, 0, SEEK_END);
     long fsize = ftell(file);
     fseek(file, 0, SEEK_SET);
-    char* fp = (char*)malloc(fsize + 1);
-    myassert(fp == NULL);
+    char* fp = (char*)callocb(1, fsize + 1);
     myassert(fread(fp, fsize, 1, file) == NULL);
     fp[fsize] = '\0';
     fclose(file);
@@ -268,8 +299,7 @@ typedef struct charv
 
 void memfwrite(void* buf, size_t bytes, charv* membuf)
 {
-    char* oblock = (char*)realloc(membuf->data, membuf->lenght + bytes);
-    myassert(oblock == NULL);
+    char* oblock = (char*)reallocb(membuf->data, membuf->lenght + bytes);
     oblock += membuf->lenght;
     myassert(memcpy(oblock, buf, bytes) == NULL);
     membuf->data = oblock;
@@ -413,11 +443,13 @@ uint8_t typetouint(Type type)
 
 char* hashtostr(HashTable* hasht, uint32_t value)
 {
+    #ifdef TRACY_ENABLE
+        ZoneNamedN(htsz, "hashtostr", true);
+    #endif
     char* strvalue = lookupHashTable(hasht, value);
     if (strvalue == NULL)
     {
-        strvalue = (char*)calloc(11, 1);
-        myassert(strvalue == NULL);
+        strvalue = (char*)callocb(11, 1);
         myassert(sprintf(strvalue, "0x%08" PRIX32, value) < 0);
     }
     return strvalue;
@@ -425,11 +457,13 @@ char* hashtostr(HashTable* hasht, uint32_t value)
 
 char* hashtostrxx(HashTable* hasht, uint64_t value)
 {
+    #ifdef TRACY_ENABLE
+        ZoneNamedN(htsxz, "hashtostrxx", true);
+    #endif
     char* strvalue = lookupHashTable(hasht, value);
     if (strvalue == NULL)
     {
-        strvalue = (char*)calloc(19, 1);
-        myassert(strvalue == NULL);
+        strvalue = (char*)callocb(19, 1);
         myassert(sprintf(strvalue, "0x%016" PRIX64, value) < 0);
     }
     return strvalue;
@@ -440,25 +474,26 @@ static int MyResizeCallback(ImGuiInputTextCallbackData* data)
     if (data->EventFlag == ImGuiInputTextFlags_CallbackResize)
     {
         char** string = (char**)data->UserData;
-        char* newdata = (char*)calloc(1, data->BufSize);
-        myassert(newdata == NULL);
+        char* newdata = (char*)callocb(1, data->BufSize);
         myassert(memcpy(newdata, *string, strlen(*string)) == NULL);
-        free(*string); *string = newdata;
+        freeb(*string); *string = newdata;
         data->Buf = *string;
     }
     return 0;
 }
 
-char* inputtext(const char* inner, uintptr_t id, char* stringf = NULL)
+char* inputtext(const char* inner, uintptr_t id, float sized = 0.f)
 {
+    #ifdef TRACY_ENABLE
+        ZoneNamedN(itz, "inputtext", true);
+    #endif
     ImGui::PushID((void*)id);
     size_t size = strlen(inner) + 1;
-    char* string = (char*)calloc(size, 1);
-    myassert(string == NULL);
+    char* string = (char*)callocb(size, 1);
     myassert(memcpy(string, inner, size) == NULL);
-    char** prot = (char**)calloc(1, sizeof(char*)); 
-    myassert(prot == NULL); *prot = string;
-    float sized = ImGui::CalcTextSize(stringf == NULL ? string : stringf, NULL, true).x;
+    char** prot = (char**)callocb(1, sizeof(char*)); *prot = string;
+    if (sized == 0)
+        sized = ImGui::CalcTextSize(inner).x;
     ImGui::SetNextItemWidth(sized + GImGui->Style.FramePadding.x * 8.0f);
     bool ret = ImGui::InputText("", string, size, ImGuiInputTextFlags_CallbackResize, MyResizeCallback, (void*)prot); 
     ImGui::PopID();
@@ -469,13 +504,16 @@ char* inputtext(const char* inner, uintptr_t id, char* stringf = NULL)
     if(ret)
         if (ImGui::IsKeyPressedMap(ImGuiKey_Enter) || GImGui->IO.MouseClicked[0])
             return *prot;
-    free(*prot);
-    free(prot);
+    freeb(*prot);
+    freeb(prot);
     return NULL;
 }
 
 void inputtextmod(HashTable* hasht, uint32_t* hash, uintptr_t id)
 {
+    #ifdef TRACY_ENABLE
+        ZoneNamedN(itmz, "inputtextmod", true);
+    #endif
     char* string = inputtext(hashtostr(hasht, *hash), id);
     if (string != NULL)
     {
@@ -492,6 +530,9 @@ void inputtextmod(HashTable* hasht, uint32_t* hash, uintptr_t id)
 
 void inputtextmodxx(HashTable* hasht, uint64_t* hash, uintptr_t id)
 {
+    #ifdef TRACY_ENABLE
+        ZoneNamedN(itmxz, "inputtextmodxx", true);
+    #endif
     char* string = inputtext(hashtostrxx(hasht, *hash), id);
     if (string != NULL)
     {
@@ -508,16 +549,17 @@ void inputtextmodxx(HashTable* hasht, uint64_t* hash, uintptr_t id)
 
 void floatarray(void* data, int size, uintptr_t id)
 {
+    #ifdef TRACY_ENABLE
+        ZoneNamedN(faz, "floatarray", true);
+    #endif
     int lengthd = 0;
-    char* stringd = NULL;
+    int lenindex = 0;
     float* arr = (float*)data;
-    char** buf = (char**)calloc(size, sizeof(char*)); myassert(buf == NULL);
-    float indent = ImGui::GetCurrentWindow()->DC.CursorPos.x;
+    char** buf = (char**)callocb(size, sizeof(char*));
     for (int i = 0; i < size; i++)
     {
         uint8_t havepoint = 0;
-        buf[i] = (char*)calloc(64, 1);
-        myassert(buf[i] == NULL);
+        buf[i] = (char*)callocb(64, 1);
         int length = sprintf(buf[i], "%g", arr[i]);
         myassert(length < 0);
         for (int k = 0; k < length; k++)
@@ -531,9 +573,11 @@ void floatarray(void* data, int size, uintptr_t id)
         if (length > lengthd)
         {
             lengthd = length;
-            stringd = buf[i];
+            lenindex = i;
         }
     }
+    float indent = ImGui::GetCurrentWindow()->DC.CursorPos.x;
+    float stringd = ImGui::CalcTextSize(buf[lenindex]).x;
     for (int i = 0; i < size; i++)
     {
         char* string = inputtext(buf[i], id + i, stringd);
@@ -543,7 +587,7 @@ void floatarray(void* data, int size, uintptr_t id)
         {
             if ((i+1) % 4 == 0 && i != 15)
             {
-                ImGui::NewLine();
+                ImGui::ItemSize(ImVec2(0.0f, GImGui->Style.FramePadding.y));
                 ImGui::SameLine(indent);
             }
             else if (i < size - 1)
@@ -551,15 +595,18 @@ void floatarray(void* data, int size, uintptr_t id)
         }
         else if (i < size - 1)
             ImGui::SameLine();
-        free(string);
+        freeb(string);
     }
     for (int i  = 0; i < size; i++)
-        free(buf[i]);
-    free(buf);
+        freeb(buf[i]);
+    freeb(buf);
 }
 
 void getarraycount(BinField* value)
 {
+    #ifdef TRACY_ENABLE
+        ZoneNamedN(gacz, "getarraycount", true);
+    #endif
     switch (value->typebin)
     {
         case OPTION:
@@ -588,6 +635,9 @@ void getarraycount(BinField* value)
 
 void getarraytype(BinField* value)
 {
+    #ifdef TRACY_ENABLE
+        ZoneNamedN(gatz, "getarraytype", true);
+    #endif
     switch (value->typebin)
     {
         case OPTION:
@@ -611,6 +661,9 @@ void getarraytype(BinField* value)
 
 void cleanbin(BinField* value)
 {
+    #ifdef TRACY_ENABLE
+        ZoneNamedNS(cbz, "cleanbin", 50, true);
+    #endif
     switch (value->typebin)
     {
         case OPTION:
@@ -648,12 +701,15 @@ void cleanbin(BinField* value)
             break;
         }
     }
-    free(value->data);
-    free(value);
+    freeb(value->data);
+    freeb(value);
 }
 
 void getstructidbin(BinField* value, uintptr_t* tree)
 {
+    #ifdef TRACY_ENABLE
+        ZoneNamedNS(gsibz, "getstructidbin", 50, true);
+    #endif
     switch (value->typebin)
     {
         case FLAG:
@@ -723,7 +779,7 @@ void getstructidbin(BinField* value, uintptr_t* tree)
             if (value->id == 0)
             {
                 value->id = *tree;
-                *tree += 1;
+                *tree += 2;
             }
             ContainerOrStructOrOption* cs = (ContainerOrStructOrOption*)value->data;
             for (uint32_t i = 0; i < cs->itemsize; i++)
@@ -804,6 +860,9 @@ void getstructidbin(BinField* value, uintptr_t* tree)
 
 void settreeopenstate(BinField* value, ImGuiWindow* window)
 {
+    #ifdef TRACY_ENABLE
+        ZoneNamedNS(stosz, "settreeopenstate", 50, true);
+    #endif
     switch (value->typebin)
     {
         case OPTION:
@@ -872,13 +931,14 @@ void settreeopenstate(BinField* value, ImGuiWindow* window)
 
 BinField* binfieldclean(Type typi, Type typo, Type typu)
 {
-    BinField* result = (BinField*)calloc(1, sizeof(BinField));
-    myassert(result == NULL);
+    #ifdef TRACY_ENABLE
+        ZoneNamedN(bfcz, "binfieldclean", true);
+    #endif
+    BinField* result = (BinField*)callocb(1, sizeof(BinField));
     result->typebin = typi;
     uint32_t size = Type_sizeclean[typi];
     myassert(size == NULL);
-    result->data = calloc(1, size);
-    myassert(result->data == NULL);
+    result->data = callocb(1, size);
     switch (typi)
     {
         case OPTION:
@@ -902,6 +962,9 @@ BinField* binfieldclean(Type typi, Type typo, Type typu)
 
 void binfieldadd(uintptr_t id, int* current1, int* current2, int* current3, bool showfirst = false)
 {
+    #ifdef TRACY_ENABLE
+        ZoneNamedN(bfaz, "binfieldadd", true);
+    #endif
     if (showfirst)
     {
         ImGui::PushID((void*)id);
@@ -940,6 +1003,9 @@ void binfieldadd(uintptr_t id, int* current1, int* current2, int* current3, bool
 
 bool ButtonExe(uintptr_t ide)
 {
+    #ifdef TRACY_ENABLE
+        ZoneNamedN(bez, "ButtonExe", true);
+    #endif
     ImGuiWindow* window = ImGui::GetCurrentWindow();
     if (window->SkipItems)
         return false;
@@ -957,7 +1023,7 @@ bool ButtonExe(uintptr_t ide)
         return false;
 
     ImGuiButtonFlags flags = 0;
-    if (window->DC.ItemFlags & ImGuiItemFlags_ButtonRepeat)
+    if (g.CurrentItemFlags & ImGuiItemFlags_ButtonRepeat)
         flags |= ImGuiButtonFlags_Repeat;
     bool hovered, held;
     bool pressed = ImGui::ButtonBehavior(bb, id, &hovered, &held, flags);
@@ -976,6 +1042,9 @@ bool ButtonExe(uintptr_t ide)
 
 bool binfielddelete(uintptr_t id)
 {
+    #ifdef TRACY_ENABLE
+        ZoneNamedN(bfdz, "binfielddelete", true);
+    #endif
     bool ret = false;
     bool retb = ButtonExe(id);
     #ifdef _DEBUG
@@ -1012,46 +1081,56 @@ bool binfielddelete(uintptr_t id)
 
 bool IsItemVisibleClip(ImGuiWindow* window)
 {
+    #ifdef TRACY_ENABLE
+        ZoneNamedN(iivcz, "IsItemVisibleClip", true);
+    #endif
     ImVec2 clipmin = window->ClipRect.Min;
     ImVec2 clipmax = window->ClipRect.Max;
-    ImVec2 lastmin = window->DC.LastItemRect.Min;
-    clipmin.x -= 100; clipmin.y -= 100; clipmax.x += 100; clipmax.y += 100;
-    return lastmin.x > clipmin.x && lastmin.y > clipmin.y && lastmin.x < clipmax.x && lastmin.y < clipmax.y;
+    ImRect lastrec = window->DC.LastItemRect;
+    clipmin.y -= 100; clipmax.y += 100;
+    return lastrec.Min.y > clipmin.y && lastrec.Max.y < clipmax.y;
 }
 
 bool IsItemVisible(ImGuiWindow* window)
 {
+    #ifdef TRACY_ENABLE
+        ZoneNamedN(iivz, "IsItemVisible", true);
+    #endif
     ImVec2 cursor = window->DC.CursorPos;
     ImVec2 clipmin = window->ClipRect.Min;
     ImVec2 clipmax = window->ClipRect.Max;
-    clipmin.x -= 100; clipmin.y -= 100; clipmax.x += 100; clipmax.y += 100;
-    return cursor.x > clipmin.x && cursor.y > clipmin.y && cursor.x < clipmax.x && cursor.y < clipmax.y;
+    clipmin.y -= 100; clipmax.y += 100;
+    return cursor.y > clipmin.y && cursor.y < clipmax.y;
 }
 
-void NewLine()
+void NewLine(ImGuiWindow* window)
 {
-    ImGui::ItemSize(ImVec2(0.0f, ImGui::GetFontSize()));
+    static const ImVec2 label_size = ImGui::CalcTextSize("", NULL, true);
+    static const ImVec2 frame_size = ImGui::CalcItemSize(ImVec2(0, 0), ImGui::CalcItemWidth(), label_size.y + GImGui->Style.FramePadding.y * 2.0f);
+    static const ImVec2 total_size = ImVec2(frame_size.x + (label_size.x > 0.0f ? GImGui->Style.ItemInnerSpacing.x + label_size.x : 0.0f), frame_size.y);
+    const ImRect total_bb(window->DC.CursorPos, window->DC.CursorPos + total_size);
+    ImGui::ItemSize(total_bb, GImGui->Style.FramePadding.y);
 }
 
 void getvaluefromtype(BinField* value, HashTable* hasht, uintptr_t* tree,
     ImGuiWindow* window, bool hasbeopened, bool* poe = NULL, ImVec2* cursor = NULL)
 {
     #ifdef TRACY_ENABLE
-        ZoneNamedN(gvftz, "getvaluefromtype", true);
+        ZoneNamedNS(gvftz, "getvaluefromtype", 50, true);
         gvftz.Text(Type_strings[value->typebin], strlen(Type_strings[value->typebin]));
     #endif
     const char* fmt = Type_fmt[value->typebin];
     if (fmt != NULL)
     {
-        char* buf = (char*)calloc(32, 1); myassert(buf == NULL);
+        char* buf = (char*)callocb(32, 1);
         myassert(sprintf(buf, fmt, *(uint64_t*)value->data) < 0);
         char* string = inputtext(buf, value->id);
         if (string != NULL)
         {
             myassert(sscanf(string, fmt, value->data) < 0);
-            free(string);
+            freeb(string);
         }
-        free(buf);
+        freeb(buf);
     } else {
         switch (value->typebin)
         {
@@ -1071,7 +1150,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht, uintptr_t* tree,
                     else
                         *(uint8_t*)value->data = 0;
                 }
-                free(string);
+                freeb(string);
                 break;
             }
             case Float32:
@@ -1083,18 +1162,17 @@ void getvaluefromtype(BinField* value, HashTable* hasht, uintptr_t* tree,
                 break;
             case RGBA:
             {
-                char* sttrg = _strdup("255");
                 uint8_t* arr = (uint8_t*)value->data;
+                static float size = ImGui::CalcTextSize("255").x;
                 for (int i = 0; i < 4; i++)
                 {
-                    char* buf = (char*)calloc(64, 1);
-                    myassert(buf == NULL);
+                    char* buf = (char*)callocb(64, 1);
                     myassert(sprintf(buf, "%" PRIu8, arr[i]) < 0);
-                    char* string = inputtext(buf, value->id + i, sttrg);
+                    char* string = inputtext(buf, value->id + i, size);
                     if (string != NULL)
                         myassert(sscanf(string, "%" PRIu8, &arr[i]) < 0);
-                    free(string);
-                    free(buf);
+                    freeb(string);
+                    freeb(buf);
                     if (i < 3)
                         ImGui::SameLine();
                 }
@@ -1105,7 +1183,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht, uintptr_t* tree,
                 char* string = inputtext((char*)value->data, value->id);
                 if (string != NULL)
                 {
-                    free(value->data);
+                    freeb(value->data);
                     value->data = string;
                 }
                 break;
@@ -1223,12 +1301,10 @@ void getvaluefromtype(BinField* value, HashTable* hasht, uintptr_t* tree,
                             } else {
                                 if (cs->valueType == MTX44)
                                 {
-                                    NewLine();
-                                    NewLine();
-                                    NewLine();
-                                    NewLine();
+                                    for (int o = 0; o < 4; o++)
+                                        NewLine(window);
                                 } else {
-                                    NewLine();
+                                    NewLine(window);
                                 }
                             }
                         }
@@ -1242,13 +1318,13 @@ void getvaluefromtype(BinField* value, HashTable* hasht, uintptr_t* tree,
                     if (add)
                     {
                         cs->itemsize += 1;
-                        cs->items = (IdField**)realloc(cs->items, cs->itemsize * sizeof(IdField*)); myassert(cs->items == NULL);
-                        cs->items[cs->itemsize - 1] = (IdField*)calloc(1, sizeof(IdField)); myassert(cs->items[cs->itemsize - 1] == NULL);
+                        cs->items = (IdField**)reallocb(cs->items, cs->itemsize * sizeof(IdField*));
+                        cs->items[cs->itemsize - 1] = (IdField*)callocb(1, sizeof(IdField));
                         cs->items[cs->itemsize - 1]->value = binfieldclean(cs->valueType, (Type)cs->current2, (Type)cs->current3);
                         getstructidbin(value, tree);
                     }
                 } else {
-                    NewLine();
+                    NewLine(window);
                 }
                 break;
             }
@@ -1282,7 +1358,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht, uintptr_t* tree,
                             ImGui::SameLine(); getarraycount(value);
                         }
                         else {
-                            NewLine();
+                            NewLine(window);
                         }
                     } else {
                         treeopen = *poe;
@@ -1292,7 +1368,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht, uintptr_t* tree,
                             inputtextmod(hasht, &pe->name, pe->id + 1);
                             ImGui::SameLine(); getarraycount(value);
                         } else {
-                            NewLine();
+                            NewLine(window);
                         }
                     }
                     if (cursor != NULL)
@@ -1390,12 +1466,10 @@ void getvaluefromtype(BinField* value, HashTable* hasht, uintptr_t* tree,
                                     } else {
                                         if (typi == MTX44)
                                         {
-                                            NewLine();
-                                            NewLine();
-                                            NewLine();
-                                            NewLine();
+                                            for (int o = 0; o < 4; o++)
+                                                NewLine(window);
                                         } else {
-                                            NewLine();
+                                            NewLine(window);
                                         }
                                     }
                                 }
@@ -1408,13 +1482,13 @@ void getvaluefromtype(BinField* value, HashTable* hasht, uintptr_t* tree,
                             if (add)
                             {
                                 pe->itemsize += 1;
-                                pe->items = (Field**)realloc(pe->items, pe->itemsize * sizeof(Field*)); myassert(pe->items == NULL);
-                                pe->items[pe->itemsize - 1] = (Field*)calloc(1, sizeof(Field)); myassert(pe->items[pe->itemsize - 1] == NULL);
+                                pe->items = (Field**)reallocb(pe->items, pe->itemsize * sizeof(Field*));
+                                pe->items[pe->itemsize - 1] = (Field*)callocb(1, sizeof(Field));
                                 pe->items[pe->itemsize - 1]->value = binfieldclean((Type)pe->current1, (Type)pe->current2, (Type)pe->current3);
                                 getstructidbin(value, tree);
                             }
                         } else {
-                            NewLine();
+                            NewLine(window);
                         }
                         ImGui::Unindent();
                         ImGui::TreePop();
@@ -1423,7 +1497,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht, uintptr_t* tree,
                     if (IsItemVisible(window))
                         inputtextmod(hasht, &pe->name, value->id);
                     else
-                        NewLine();
+                        NewLine(window);
                     if (poe != NULL)
                         if (*poe == true)
                             ImGui::TreePop();
@@ -1456,6 +1530,7 @@ void getvaluefromtype(BinField* value, HashTable* hasht, uintptr_t* tree,
                             mpz.Text(Type_strings[typi], strlen(Type_strings[typi]));
                             mpz.Text(Type_strings[typd], strlen(Type_strings[typd]));
                         #endif
+                        bool hasbendeleted = false;
                         if (IsItemVisibleClip(window))
                         {
                             if ((typi <= WADENTRYLINK) || typi == LINK || typi == FLAG)
@@ -1465,27 +1540,25 @@ void getvaluefromtype(BinField* value, HashTable* hasht, uintptr_t* tree,
                             }
                             ImGui::SameLine();
                             getvaluefromtype(mp->items[i]->key, hasht, tree, window, hasbeopened);
+                            ImGui::SameLine();
+                            if (binfielddelete(mp->items[i]->id2))
+                            {
+                                cleanbin(mp->items[i]->key);
+                                cleanbin(mp->items[i]->value);
+                                mp->items[i]->key = NULL;
+                                mp->items[i]->value = NULL;
+                                hasbendeleted = true;
+                                if (treeopen)
+                                    ImGui::TreePop();
+                             }
                         } else if ((typi >= CONTAINER && typi <= EMBEDDED) || typi == OPTION || typi == MAP) {
                             ImGui::SameLine();
                             getvaluefromtype(mp->items[i]->key, hasht, tree, window, hasbeopened);
                         } else if (typi == MTX44) {
-                            NewLine();
-                            NewLine();
-                            NewLine();
-                            NewLine();
-                        } else {
-                            NewLine();
+                            for (int o = 0; o < 3; o++)
+                                NewLine(window);
                         }
-                        ImGui::SameLine();
-                        if (IsItemVisible(window) && binfielddelete(mp->items[i]->id2))
-                        {
-                            cleanbin(mp->items[i]->key);
-                            cleanbin(mp->items[i]->value);
-                            mp->items[i]->key = NULL;
-                            mp->items[i]->value = NULL;
-                            if (treeopen)
-                                ImGui::TreePop();
-                        } else if (treeopen) {
+                        if (treeopen && hasbendeleted != true) {
                             if (IsItemVisible(window))
                             {
                                 ImGui::Indent();
@@ -1503,12 +1576,10 @@ void getvaluefromtype(BinField* value, HashTable* hasht, uintptr_t* tree,
                                 getvaluefromtype(mp->items[i]->value, hasht, tree, window, hasbeopened);
                                 ImGui::Unindent();
                             } else if (typd == MTX44) {
-                                NewLine();
-                                NewLine();
-                                NewLine();
-                                NewLine();
+                                for (int o = 0; o < 4; o++)
+                                    NewLine(window);
                             } else {
-                                NewLine();
+                                NewLine(window);
                             }
                             ImGui::TreePop();
                         }
@@ -1524,14 +1595,14 @@ void getvaluefromtype(BinField* value, HashTable* hasht, uintptr_t* tree,
                     if (add)
                     {
                         mp->itemsize += 1;
-                        mp->items = (Pair**)realloc(mp->items, mp->itemsize * sizeof(Pair*)); myassert(mp->items == NULL);
-                        mp->items[mp->itemsize - 1] = (Pair*)calloc(1, sizeof(Pair)); myassert(mp->items[mp->itemsize - 1] == NULL);
+                        mp->items = (Pair**)reallocb(mp->items, mp->itemsize * sizeof(Pair*));
+                        mp->items[mp->itemsize - 1] = (Pair*)callocb(1, sizeof(Pair));
                         mp->items[mp->itemsize - 1]->key = binfieldclean(mp->keyType, (Type)mp->current2, (Type)mp->current3);
                         mp->items[mp->itemsize - 1]->value = binfieldclean(mp->valueType, (Type)mp->current4, (Type)mp->current5);
                         getstructidbin(value, tree);
                     }
                 } else {
-                    NewLine();
+                    NewLine(window);
                 }
                 break;
             }
@@ -1543,15 +1614,13 @@ void getvaluefromtype(BinField* value, HashTable* hasht, uintptr_t* tree,
 
 BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
 {
-    BinField* result = (BinField*)calloc(1, sizeof(BinField));
-    myassert(result == NULL);
+    BinField* result = (BinField*)callocb(1, sizeof(BinField));
     result->typebin = uinttotype(typeidbin);
     myassert(result->typebin > FLAG);
     int size = Type_size[result->typebin];
     if (size != 0)
     {
-        void* data = (void*)malloc(size);
-        myassert(data == NULL);
+        void* data = (void*)mallocb(size);
         memfread(data, size, fp);
         result->data = data;
     }
@@ -1563,8 +1632,7 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
             {
                 uint16_t stringlength = 0;
                 memfread(&stringlength, 2, fp);
-                char* stringb = (char*)calloc(stringlength + 1, 1);
-                myassert(stringb == NULL);
+                char* stringb = (char*)callocb(stringlength + 1, 1);
                 memfread(stringb, (size_t)stringlength, fp);
                 stringb[stringlength] = '\0';
                 result->data = stringb;
@@ -1577,19 +1645,16 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
                 uint8_t type = 0;
                 uint32_t size = 0;
                 uint32_t count = 0;
-                ContainerOrStructOrOption* tmpcs = (ContainerOrStructOrOption*)calloc(1, sizeof(ContainerOrStructOrOption));
-                myassert(tmpcs == NULL);
+                ContainerOrStructOrOption* tmpcs = (ContainerOrStructOrOption*)callocb(1, sizeof(ContainerOrStructOrOption));
                 memfread(&type, 1, fp);
                 memfread(&size, 4, fp);
                 memfread(&count, 4, fp);
                 tmpcs->itemsize = count;
                 tmpcs->valueType = uinttotype(type);
-                tmpcs->items = (IdField**)calloc(count, sizeof(IdField*));
-                myassert(tmpcs->items == NULL);
+                tmpcs->items = (IdField**)callocb(count, sizeof(IdField*));
                 for (uint32_t i = 0; i < count; i++)
                 {
-                    tmpcs->items[i] = (IdField*)calloc(1, sizeof(IdField));
-                    myassert(tmpcs->items[i] == NULL);
+                    tmpcs->items[i] = (IdField*)callocb(1, sizeof(IdField));
                     tmpcs->items[i]->value = readvaluebytype(tmpcs->valueType, hasht, fp);
                 }
                 result->data = tmpcs;
@@ -1600,8 +1665,7 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
             {
                 uint32_t size = 0;
                 uint16_t count = 0;
-                PointerOrEmbed* tmppe = (PointerOrEmbed*)calloc(1, sizeof(PointerOrEmbed));
-                myassert(tmppe == NULL);
+                PointerOrEmbed* tmppe = (PointerOrEmbed*)callocb(1, sizeof(PointerOrEmbed));
                 memfread(&tmppe->name, 4, fp);
                 if (tmppe->name == 0)
                 {
@@ -1611,13 +1675,11 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
                 memfread(&size, 4, fp);
                 memfread(&count, 2, fp);
                 tmppe->itemsize = count;
-                tmppe->items = (Field**)calloc(count, sizeof(Field*));
-                myassert(tmppe->items == NULL);
+                tmppe->items = (Field**)callocb(count, sizeof(Field*));
                 for (uint16_t i = 0; i < count; i++)
                 {
                     uint8_t type = 0;
-                    Field* tmpfield = (Field*)calloc(1, sizeof(Field));
-                    myassert(tmpfield == NULL);
+                    Field* tmpfield = (Field*)callocb(1, sizeof(Field));
                     memfread(&tmpfield->key, 4, fp);
                     memfread(&type, 1, fp);
                     tmpfield->value = readvaluebytype(type, hasht, fp);
@@ -1630,18 +1692,15 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
             {
                 uint8_t type = 0;
                 uint8_t count = 0;
-                ContainerOrStructOrOption* tmpo = (ContainerOrStructOrOption*)calloc(1, sizeof(ContainerOrStructOrOption));
-                myassert(tmpo == NULL);
+                ContainerOrStructOrOption* tmpo = (ContainerOrStructOrOption*)callocb(1, sizeof(ContainerOrStructOrOption));
                 memfread(&type, 1, fp);
                 memfread(&count, 1, fp);
                 tmpo->itemsize = count;
                 tmpo->valueType = uinttotype(type);
-                tmpo->items = (IdField**)calloc(count, sizeof(IdField*));
-                myassert(tmpo->items == NULL);
+                tmpo->items = (IdField**)callocb(count, sizeof(IdField*));
                 for (uint32_t i = 0; i < count; i++)
                 {
-                    tmpo->items[i] = (IdField*)calloc(1, sizeof(IdField));
-                    myassert(tmpo->items[i] == NULL);
+                    tmpo->items[i] = (IdField*)callocb(1, sizeof(IdField));
                     tmpo->items[i]->value = readvaluebytype(tmpo->valueType, hasht, fp);
                 }
                 result->data = tmpo;
@@ -1653,8 +1712,7 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
                 uint8_t typek = 0;
                 uint8_t typev = 0;
                 uint32_t count = 0;
-                Map* tmpmap = (Map*)calloc(1, sizeof(Map));
-                myassert(tmpmap == NULL);
+                Map* tmpmap = (Map*)callocb(1, sizeof(Map));
                 memfread(&typek, 1, fp);
                 memfread(&typev, 1, fp);
                 memfread(&size, 4, fp);
@@ -1662,12 +1720,10 @@ BinField* readvaluebytype(uint8_t typeidbin, HashTable* hasht, char** fp)
                 tmpmap->itemsize = count;
                 tmpmap->keyType = uinttotype(typek);
                 tmpmap->valueType = uinttotype(typev);
-                tmpmap->items = (Pair**)calloc(count, sizeof(Pair*));
-                myassert(tmpmap->items == NULL);
+                tmpmap->items = (Pair**)callocb(count, sizeof(Pair*));
                 for (uint32_t i = 0; i < count; i++)
                 {
-                    Pair* pairtmp = (Pair*)calloc(1, sizeof(Pair));
-                    myassert(pairtmp == NULL);
+                    Pair* pairtmp = (Pair*)callocb(1, sizeof(Pair));
                     pairtmp->key = readvaluebytype(tmpmap->keyType, hasht, fp);
                     pairtmp->value = readvaluebytype(tmpmap->valueType, hasht, fp);
                     tmpmap->items[i] = pairtmp;
@@ -1894,8 +1950,7 @@ typedef struct PacketBin
 
 PacketBin* decode(char* filepath, HashTable* hasht)
 {
-    PacketBin* packet = (PacketBin*)calloc(1, sizeof(PacketBin));
-    myassert(packet == NULL);
+    PacketBin* packet = (PacketBin*)callocb(1, sizeof(PacketBin));
     FILE* file = fopen(filepath, "rb");
     if (!file)
     {
@@ -1907,8 +1962,7 @@ PacketBin* decode(char* filepath, HashTable* hasht)
     fseek(file, 0, SEEK_END);
     long fsize = ftell(file);
     fseek(file, 0, SEEK_SET);
-    char* fp = (char*)malloc(fsize + 1);
-    myassert(fp == NULL);
+    char* fp = (char*)mallocb(fsize + 1);
     myassert(fread(fp, fsize, 1, file) == NULL);
     fp[fsize] = '\0';
     fclose(file);
@@ -1946,14 +2000,11 @@ PacketBin* decode(char* filepath, HashTable* hasht)
         memfread(&linkedFilesCount, 4, &fp);
         if (linkedFilesCount > 0)
         {
-            PacketId** LinkedListt = (PacketId**)calloc(linkedFilesCount, sizeof(PacketId*));
-            myassert(LinkedListt == NULL);
+            PacketId** LinkedListt = (PacketId**)callocb(linkedFilesCount, sizeof(PacketId*));
             for (uint32_t i = 0; i < linkedFilesCount; i++) {
                 memfread(&stringlength, 2, &fp);
-                LinkedListt[i] = (PacketId*)calloc(1, sizeof(PacketId));
-                myassert(LinkedListt[i] == NULL);
-                LinkedListt[i]->str = (char*)calloc(stringlength + 1, 1);
-                myassert(LinkedListt[i]->str == NULL);
+                LinkedListt[i] = (PacketId*)callocb(1, sizeof(PacketId));
+                LinkedListt[i]->str = (char*)callocb(stringlength + 1, 1);
                 memfread(LinkedListt[i]->str, (size_t)stringlength, &fp);
                 LinkedListt[i]->str[stringlength] = '\0';
             }
@@ -1966,17 +2017,14 @@ PacketBin* decode(char* filepath, HashTable* hasht)
     uint32_t entryCount = 0;
     memfread(&entryCount, 4, &fp);
 
-    uint32_t* entryTypes = (uint32_t*)calloc(entryCount, 4);
-    myassert(entryTypes == NULL);
+    uint32_t* entryTypes = (uint32_t*)callocb(entryCount, 4);
     memfread(entryTypes, entryCount * 4, &fp);
 
-    Map* entriesMap = (Map*)calloc(1, sizeof(Map));
-    myassert(entriesMap == NULL);
+    Map* entriesMap = (Map*)callocb(1, sizeof(Map));
     entriesMap->keyType = HASH;
     entriesMap->valueType = EMBEDDED;
     entriesMap->itemsize = entryCount;
-    entriesMap->items = (Pair**)calloc(entryCount, sizeof(Pair*));
-    myassert(entriesMap->items == NULL);
+    entriesMap->items = (Pair**)callocb(entryCount, sizeof(Pair*));
     for (size_t i = 0; i < entryCount; i++)
     {
         uint32_t entryLength = 0;
@@ -1988,12 +2036,10 @@ PacketBin* decode(char* filepath, HashTable* hasht)
         uint16_t fieldcount = 0;
         memfread(&fieldcount, 2, &fp);
 
-        PointerOrEmbed* entry = (PointerOrEmbed*)calloc(1, sizeof(PointerOrEmbed));
-        myassert(entry == NULL);
+        PointerOrEmbed* entry = (PointerOrEmbed*)callocb(1, sizeof(PointerOrEmbed));
         entry->itemsize = fieldcount;
         entry->name = entryTypes[i];
-        entry->items = (Field**)calloc(fieldcount, sizeof(Field*));
-        myassert(entry->items == NULL);
+        entry->items = (Field**)callocb(fieldcount, sizeof(Field*));
         for (uint16_t o = 0; o < fieldcount; o++)
         {
             uint32_t name = 0;
@@ -2002,39 +2048,33 @@ PacketBin* decode(char* filepath, HashTable* hasht)
             uint8_t type = 0;
             memfread(&type, 1, &fp);
 
-            Field* fieldtmp = (Field*)calloc(1, sizeof(Field));
-            myassert(fieldtmp == NULL);
+            Field* fieldtmp = (Field*)callocb(1, sizeof(Field));
             fieldtmp->key = name;
             fieldtmp->value = readvaluebytype(type, hasht, &fp);
             entry->items[o] = fieldtmp;
         }
 
-        void* ptr = calloc(1, sizeof(uint32_t));
-        myassert(ptr == NULL);
+        void* ptr = callocb(1, sizeof(uint32_t));
         *((uint32_t*)ptr) = entryKeyHash;
-        BinField* hash = (BinField*)calloc(1, sizeof(BinField));
-        myassert(hash == NULL);
+        BinField* hash = (BinField*)callocb(1, sizeof(BinField));
         hash->typebin = HASH;
         hash->data = ptr;
 
-        BinField* entrye = (BinField*)calloc(1, sizeof(BinField));
-        myassert(entrye == NULL);
+        BinField* entrye = (BinField*)callocb(1, sizeof(BinField));
         entrye->typebin = EMBEDDED;
         entrye->data = entry;
 
-        Pair* pairtmp = (Pair*)calloc(1, sizeof(Pair));
-        myassert(pairtmp == NULL);
+        Pair* pairtmp = (Pair*)callocb(1, sizeof(Pair));
         pairtmp->key = hash;
         pairtmp->value = entrye;
         entriesMap->items[i] = pairtmp;
     }
 
-    BinField* entriesMapbin = (BinField*)calloc(1, sizeof(BinField));
-    myassert(entriesMapbin == NULL);
+    BinField* entriesMapbin = (BinField*)callocb(1, sizeof(BinField));
     entriesMapbin->typebin = MAP;
     entriesMapbin->data = entriesMap;
     packet->entriesMap = entriesMapbin;
-    free(fp-fsize);
+    freeb(fp-fsize);
 
     printf("finised reading file.\n");
     return packet;
@@ -2043,8 +2083,7 @@ PacketBin* decode(char* filepath, HashTable* hasht)
 int encode(char* filepath, PacketBin* packet)
 {
     printf("creating bin file.\n");
-    charv* str = (charv*)calloc(1, sizeof(charv));
-    myassert(str == NULL);
+    charv* str = (charv*)callocb(1, sizeof(charv));
     if (packet->isprop == false)
     {
         uint32_t unk1 = 1, unk2 = 0;
@@ -2121,7 +2160,7 @@ int encode(char* filepath, PacketBin* packet)
     fwrite(str->data, str->lenght, 1, file);
     printf("finised writing to file.\n");
     fclose(file);
-    free(str->data);
+    freeb(str->data);
     return 0;
 }
 

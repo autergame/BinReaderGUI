@@ -22,7 +22,7 @@ void strip_filepath(char* fname)
 int main()
 {
 	#ifdef TRACY_ENABLE
-		ZoneScopedN("main");
+		ZoneNamedN(mz, "main", true);
 	#endif
 	RECT rectScreen;
 	int width = 1024, height = 576;
@@ -65,13 +65,14 @@ int main()
 	colors[ImGuiCol_ButtonActive] = ImVec4(0.4f, 0.4f, 0.4f, 1.0f);
 	colors[ImGuiCol_TextSelectedBg] = ImVec4(0.4f, 0.4f, 0.4f, 1.0f);
 	colors[ImGuiCol_MenuBarBg] = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-	ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 2.0f);
-	ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing, GImGui->Style.FramePadding.x * 3.0f - 2.0f);
+	GImGui->Style.WindowRounding = 0.f;
+	GImGui->Style.FrameBorderSize = 1.f;
+	GImGui->Style.WindowBorderSize = 2.f;
+	GImGui->Style.IndentSpacing = GImGui->Style.FramePadding.x * 3.0f - 2.0f;
 	ImGui::GetIO().Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\consola.ttf", 13);
-	int FULL_SCREEN_FLAGS = ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar | 
-		ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_HorizontalScrollbar;
+	int FULL_SCREEN_FLAGS = ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_AlwaysAutoResize |
+		ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+		ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_HorizontalScrollbar;
 
 	printf("loading hashes.\n");
 	HashTable* hasht = createHashTable(10000);
@@ -176,9 +177,9 @@ int main()
 		glfwSetWindowTitle(window, tmp);
 
 		if (GImGui->IO.Framerate < 30.f)
-			ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
+			GImGui->Style.FrameRounding = 0.f;
 		else
-			ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
+			GImGui->Style.FrameRounding = 4.f;
 
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
@@ -317,7 +318,7 @@ int main()
 				{
 					sscanf(string, "%" PRIu32, &packet->Version);
 					myassert(sprintf(buf, "%" PRIu32, packet->Version) < 0);
-					free(string);
+					freeb(string);
 				}
 				if (packet->Version >= 2)
 				{
@@ -330,7 +331,7 @@ int main()
 							char* str = inputtext(packet->LinkedList[i]->str, packet->LinkedList[i]->id);
 							if (str != NULL)
 							{
-								free(packet->LinkedList[i]->str);
+								freeb(packet->LinkedList[i]->str);
 								packet->LinkedList[i]->str = str;
 							}
 						}
@@ -338,9 +339,9 @@ int main()
 						{
 							treebefore += 1;
 							packet->linkedsize += 1;
-							packet->LinkedList = (PacketId**)realloc(packet->LinkedList, packet->linkedsize * sizeof(PacketId*));
-							packet->LinkedList[packet->linkedsize-1] = (PacketId*)calloc(1, sizeof(PacketId));
-							packet->LinkedList[packet->linkedsize-1]->str = (char*)calloc(1, 1);
+							packet->LinkedList = (PacketId**)reallocb(packet->LinkedList, packet->linkedsize * sizeof(PacketId*));
+							packet->LinkedList[packet->linkedsize-1] = (PacketId*)callocb(1, sizeof(PacketId));
+							packet->LinkedList[packet->linkedsize-1]->str = (char*)callocb(1, 1);
 							packet->LinkedList[packet->linkedsize-1]->id = treebefore;
 						}
 						ImGui::Unindent();
@@ -393,14 +394,14 @@ int main()
 					if (ImGui::Button("Add new item"))
 					{
 						mp->itemsize += 1;
-						mp->items = (Pair**)realloc(mp->items, mp->itemsize * sizeof(Pair*)); myassert(mp->items == NULL);
-						mp->items[mp->itemsize - 1] = (Pair*)calloc(1, sizeof(Pair)); myassert(mp->items[mp->itemsize - 1] == NULL);
+						mp->items = (Pair**)reallocb(mp->items, mp->itemsize * sizeof(Pair*));
+						mp->items[mp->itemsize - 1] = (Pair*)callocb(1, sizeof(Pair));
 						mp->items[mp->itemsize - 1]->key = binfieldclean(mp->keyType, (Type)mp->current2, (Type)mp->current3);
 						mp->items[mp->itemsize - 1]->value = binfieldclean(mp->valueType, (Type)mp->current4, (Type)mp->current5);
 						getstructidbin(packet->entriesMap, &treebefore);
 					}
 				} else {
-					ImGui::NewLine();
+					NewLine(windowi);
 				}
 				ImGui::Unindent();
 				ImGui::TreePop();
@@ -409,17 +410,16 @@ int main()
 			}		
 		}
 		ImGui::End();
-		ImGui::PopStyleVar();
 
 		#ifdef _DEBUG
-		ImGui::ShowMetricsWindow();
-		ImGui::Begin("Dear ImGui Style Editor", NULL, ImGuiWindowFlags_AlwaysAutoResize);
-		ImGui::ShowStyleEditor();
-		ImGui::End();
-		ImGui::SetWindowCollapsed("Dear ImGui Style Editor", true, ImGuiCond_Once);
-		ImGui::SetWindowCollapsed("Dear ImGui Metrics/Debugger", true, ImGuiCond_Once);
-		ImGui::SetWindowPos("Dear ImGui Style Editor", ImVec2(width/1.75f, 73), ImGuiCond_Once);
-		ImGui::SetWindowPos("Dear ImGui Metrics/Debugger", ImVec2(width/1.75f, 50), ImGuiCond_Once);
+			ImGui::ShowMetricsWindow();
+			ImGui::Begin("Dear ImGui Style Editor", NULL, ImGuiWindowFlags_AlwaysAutoResize);
+			ImGui::ShowStyleEditor();
+			ImGui::End();
+			ImGui::SetWindowCollapsed("Dear ImGui Style Editor", true, ImGuiCond_Once);
+			ImGui::SetWindowCollapsed("Dear ImGui Metrics/Debugger", true, ImGuiCond_Once);
+			ImGui::SetWindowPos("Dear ImGui Style Editor", ImVec2(width/1.75f, 73), ImGuiCond_Once);
+			ImGui::SetWindowPos("Dear ImGui Metrics/Debugger", ImVec2(width/1.75f, 50), ImGuiCond_Once);
 		#endif
 
 		ImGui::Render();
