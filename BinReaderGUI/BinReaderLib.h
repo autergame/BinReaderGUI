@@ -1,5 +1,4 @@
 //author https://github.com/autergame
-#define _CRT_SECURE_NO_WARNINGS
 #define IMGUI_DEFINE_MATH_OPERATORS
 #define GLFW_EXPOSE_NATIVE_WIN32
 #pragma comment(lib, "mimalloc-static")
@@ -22,22 +21,28 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <locale.h>
+#include <errno.h>
 
-#define IM_COL32_GREY IM_COL32(128,128,128,255)
+//#ifdef _DEBUG
+//    #define TRACY_ENABLE_ZONES
+//#endif
 
 void _assert(char const* msg, char const* file, unsigned line)
 {
     fprintf(stderr, "ERROR: %s %s %d\n", msg, file, line);
-    scanf("press enter to exit.");
+    scanf_s("press enter to exit.");
     exit(1);
 }
 #define myassert(expression) if (expression) { _assert(#expression, __FILE__, __LINE__); }
+
+#pragma region MemoryThings
 
 void* callocb(size_t count, size_t size)
 {
     void* p = mi_calloc(count, size);
     myassert(p == NULL);
-#ifdef TRACY_ENABLE
+#ifdef TRACY_ENABLE_ZONES
     TracyAlloc(p, count*size);
 #endif
     return p;
@@ -50,30 +55,22 @@ void* reallocb(void* p, size_t size)
     return pe;
 }
 
-void* mallocb(size_t size)
-{
-    void* p = mi_malloc(size);
-    myassert(p == NULL);
-#ifdef TRACY_ENABLE
-    TracyAlloc(p, size);
-#endif
-    return p;
-}
-
 void freeb(void* p)
 {
-#ifdef TRACY_ENABLE
+#ifdef TRACY_ENABLE_ZONES
     TracyFree(p);
 #endif
     mi_free(p);
 }
 
 static void* MallocbWrapper(size_t size, void* user_data) {
-    IM_UNUSED(user_data); return mallocb(size); 
+    IM_UNUSED(user_data); return callocb(1, size); 
 }
 static void  FreebWrapper(void* ptr, void* user_data) {
     IM_UNUSED(user_data); freeb(ptr); 
 }
+
+#pragma endregion
 
 #pragma region FNV1Hash XXHash HashTable 
 
@@ -235,8 +232,10 @@ void InsertHashTable(HashTable* hasht, uint64_t key, char* val)
     uint64_t pos = key % hasht->size;
     HashTableNode* list = hasht->list[pos];
     HashTableNode* temp = list;
-    while (temp) {
-        if (temp->key == key) {
+    while (temp) 
+    {
+        if (temp->key == key) 
+        {
             temp->value = val;
             return;
         }
@@ -266,10 +265,14 @@ char* LookupHashTable(HashTable* hasht, uint64_t key)
 
 int AddToHashTable(HashTable* hasht, const char* filename, bool xxhash = false)
 {
-    FILE* file = fopen(filename, "rb");
-    if (!file)
+    FILE* file;
+    errno_t err = fopen_s(&file, filename, "rb");
+    if (err)
     {
-        printf("ERROR: cannot read file %s.\n", filename);
+        char* errmsg = (char*)callocb(255, 1);
+        strerror_s(errmsg, 255, err);
+        printf("ERROR: cannot read file %s %s.\n", filename, errmsg);
+        free(errmsg);
         return 1;
     }
     fseek(file, 0, SEEK_END);
@@ -279,27 +282,34 @@ int AddToHashTable(HashTable* hasht, const char* filename, bool xxhash = false)
     myassert(fread(fp, fsize, 1, file) == NULL);
     fp[fsize] = 0;
     fclose(file);
+
     uint32_t lines = 0;
-    char* hashend, *hashline = strtok(fp, "\n");
+    char* next_token = NULL;
+    char* hashend, *hashline = strtok_s(fp, "\n", &next_token);
     if (xxhash == false)
     {
-        while (hashline != NULL) {
+        while (hashline != NULL)
+        {
             lines += 1;
             uint64_t key = strtoul(hashline, &hashend, 16);
-            InsertHashTable(hasht, key, hashend + 1);
-            hashline = strtok(NULL, "\n");
+            if (LookupHashTable(hasht, key) == NULL)
+                InsertHashTable(hasht, key, hashend + 1);
+            hashline = strtok_s(next_token, "\n", &next_token);
         }
     }
     else
     {
-        while (hashline != NULL) {
+        while (hashline != NULL)
+        {
             lines += 1;
             uint64_t key = strtoull(hashline, &hashend, 16);
-            InsertHashTable(hasht, key, hashend + 1);
-            hashline = strtok(NULL, "\n");
+            if (LookupHashTable(hasht, key) == NULL)
+                InsertHashTable(hasht, key, hashend + 1);
+            hashline = strtok_s(next_token, "\n", &next_token);
         }
     }
-    printf("hashes: %s loaded: %d lines.\n", filename, lines);
+
+    printf("file: %s loaded: %d hashes lines.\n", filename, lines);
     return 0;
 }
 
@@ -462,28 +472,28 @@ uint8_t TypeToUint8(Type type)
 
 char* HashToString(HashTable* hasht, uint32_t value)
 {
-    #ifdef TRACY_ENABLE
+    #ifdef TRACY_ENABLE_ZONES
         ZoneNamedN(htsz, "HashToString", true);
     #endif
     char* strvalue = LookupHashTable(hasht, value);
     if (strvalue == NULL)
     {
-        strvalue = (char*)callocb(11, 1);
-        myassert(sprintf(strvalue, "0x%08" PRIX32, value) < 0);
+        strvalue = (char*)callocb(16, 1);
+        myassert(sprintf_s(strvalue, 16, "0x%08" PRIX32, value) <= 0);
     }
     return strvalue;
 }
 
 char* HashToStringxx(HashTable* hasht, uint64_t value)
 {
-    #ifdef TRACY_ENABLE
+    #ifdef TRACY_ENABLE_ZONES
         ZoneNamedN(htsxz, "HashToStringxx", true);
     #endif
     char* strvalue = LookupHashTable(hasht, value);
     if (strvalue == NULL)
     {
-        strvalue = (char*)callocb(19, 1);
-        myassert(sprintf(strvalue, "0x%016" PRIX64, value) < 0);
+        strvalue = (char*)callocb(32, 1);
+        myassert(sprintf_s(strvalue, 32, "0x%016" PRIX64, value) <= 0);
     }
     return strvalue;
 }
@@ -503,18 +513,20 @@ static int MyResizeCallback(ImGuiInputTextCallbackData* data)
 
 char* InputText(const char* inner, uintptr_t id, float sized = 0.f)
 {
-    #ifdef TRACY_ENABLE
+    #ifdef TRACY_ENABLE_ZONES
         ZoneNamedN(itz, "InputText", true);
     #endif
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
     ImGui::PushID((void*)id);
     size_t size = strlen(inner) + 1;
     char* string = (char*)callocb(size, 1);
     myassert(memcpy(string, inner, size) == NULL);
-    char** prot = (char**)callocb(1, sizeof(char*)); *prot = string;
+    char** userdata = (char**)callocb(1, sizeof(char*)); *userdata = string;
     if (sized == 0)
         sized = ImGui::CalcTextSize(inner).x;
-    ImGui::SetNextItemWidth(sized + GImGui->Style.FramePadding.x * 8.f);
-    bool ret = ImGui::InputText("", string, size, ImGuiInputTextFlags_CallbackResize, MyResizeCallback, (void*)prot); 
+    ImGui::PushItemWidth(ImMin(sized + GImGui->FontSize * 2.f,
+        window->ContentRegionRect.Max.x - window->DC.CursorPos.x - GImGui->FontSize * 4.f));
+    bool ret = ImGui::InputText("", string, size, ImGuiInputTextFlags_CallbackResize, MyResizeCallback, (void*)userdata);
     ImGui::PopID();
 #ifdef _DEBUG
     if (ImGui::IsItemHovered())
@@ -522,15 +534,15 @@ char* InputText(const char* inner, uintptr_t id, float sized = 0.f)
 #endif
     if(ret)
         if (ImGui::IsKeyPressedMap(ImGuiKey_Enter) || GImGui->IO.MouseClicked[0])
-            return *prot;
-    freeb(*prot);
-    freeb(prot);
+            return *userdata;
+    freeb(*userdata);
+    freeb(userdata);
     return NULL;
 }
 
 void InputTextHash(HashTable* hasht, uint32_t* hash, uintptr_t id)
 {
-    #ifdef TRACY_ENABLE
+    #ifdef TRACY_ENABLE_ZONES
         ZoneNamedN(itmz, "InputTextHash", true);
     #endif
     char* string = InputText(HashToString(hasht, *hash), id);
@@ -549,7 +561,7 @@ void InputTextHash(HashTable* hasht, uint32_t* hash, uintptr_t id)
 
 void InputTextHashxx(HashTable* hasht, uint64_t* hash, uintptr_t id)
 {
-    #ifdef TRACY_ENABLE
+    #ifdef TRACY_ENABLE_ZONES
         ZoneNamedN(itmxz, "InputTextHashxx", true);
     #endif
     char* string = InputText(HashToStringxx(hasht, *hash), id);
@@ -568,40 +580,31 @@ void InputTextHashxx(HashTable* hasht, uint64_t* hash, uintptr_t id)
 
 void FloatArray(void* data, int size, uintptr_t id)
 {
-    #ifdef TRACY_ENABLE
+    #ifdef TRACY_ENABLE_ZONES
         ZoneNamedN(faz, "FloatArray", true);
     #endif
-    int lengthd = 0;
-    int lenindex = 0;
+    int lengthm = 0;
+    int arrindex = 0;
     float* arr = (float*)data;
     char** buf = (char**)callocb(size, sizeof(char*));
     for (int i = 0; i < size; i++)
     {
-        uint8_t havepoint = 0;
         buf[i] = (char*)callocb(64, 1);
-        int length = sprintf(buf[i], "%g", arr[i]);
-        myassert(length < 0);
-        for (int k = 0; k < length; k++)
-            if (buf[i][k] == '.')
-                havepoint = 1;
-        if (havepoint == 0)
+        int length = sprintf_s(buf[i], 64, "%g", arr[i]);
+        myassert(length <= 0);
+        if (length > lengthm)
         {
-            length = sprintf(buf[i], "%g.0", arr[i]);
-            myassert(length < 0);
-        }
-        if (length > lengthd)
-        {
-            lengthd = length;
-            lenindex = i;
+            lengthm = length;
+            arrindex = i;
         }
     }
     float indent = ImGui::GetCurrentWindow()->DC.CursorPos.x;
-    float stringd = ImGui::CalcTextSize(buf[lenindex]).x;
+    float stringd = ImGui::CalcTextSize(buf[arrindex]).x;
     for (int i = 0; i < size; i++)
     {
         char* string = InputText(buf[i], id + i, stringd);
         if (string != NULL)
-            sscanf(string, "%g", &arr[i]);
+            myassert(sscanf_s(string, "%g", &arr[i]) <= 0);
         if (size == 16)
         {
             if ((i+1) % 4 == 0 && i != 15)
@@ -623,7 +626,7 @@ void FloatArray(void* data, int size, uintptr_t id)
 
 void GetArrayCount(BinField* value)
 {
-    #ifdef TRACY_ENABLE
+    #ifdef TRACY_ENABLE_ZONES
         ZoneNamedN(gacz, "GetArrayCount", true);
     #endif
     switch (value->type)
@@ -633,20 +636,29 @@ void GetArrayCount(BinField* value)
         case STRUCT:
         {
             ContainerOrStructOrOption* cs = (ContainerOrStructOrOption*)value->data;
-            ImGui::Text("Count %d", cs->itemsize);
+            if (cs->itemsize > 1)
+                ImGui::Text("%d Items", cs->itemsize);
+            else 
+                ImGui::Text("%d Item", cs->itemsize);
             break;
         }
         case POINTER:
         case EMBEDDED:
         {
             PointerOrEmbed* pe = (PointerOrEmbed*)value->data;
-            ImGui::Text("Count %d", pe->itemsize);
+            if (pe->itemsize > 1)
+                ImGui::Text("%d Items", pe->itemsize);
+            else
+                ImGui::Text("%d Item", pe->itemsize);
             break;
         }
         case MAP:
         {
             Map* mp = (Map*)value->data;
-            ImGui::Text("Count %d", mp->itemsize);
+            if (mp->itemsize > 1)
+                ImGui::Text("%d Items", mp->itemsize);
+            else
+                ImGui::Text("%d Item", mp->itemsize);
             break;
         }
     }
@@ -654,7 +666,7 @@ void GetArrayCount(BinField* value)
 
 void GetArrayType(BinField* value)
 {
-    #ifdef TRACY_ENABLE
+    #ifdef TRACY_ENABLE_ZONES
         ZoneNamedN(gatz, "GetArrayType", true);
     #endif
     switch (value->type)
@@ -680,7 +692,7 @@ void GetArrayType(BinField* value)
 
 void ClearBin(BinField* value)
 {
-    #ifdef TRACY_ENABLE
+    #ifdef TRACY_ENABLE_ZONES
         ZoneNamedNS(cbz, "ClearBin", 50, true);
     #endif
     switch (value->type)
@@ -727,7 +739,7 @@ void ClearBin(BinField* value)
 
 void GetStructIdBin(BinField* value, uintptr_t* tree)
 {
-    #ifdef TRACY_ENABLE
+    #ifdef TRACY_ENABLE_ZONES
         ZoneNamedNS(gsibz, "GetStructIdBin", 50, true);
     #endif
     switch (value->type)
@@ -865,7 +877,7 @@ void GetStructIdBin(BinField* value, uintptr_t* tree)
 
 void GetTreeSize(BinField* value, uint32_t* size)
 {
-    #ifdef TRACY_ENABLE
+    #ifdef TRACY_ENABLE_ZONES
         ZoneNamedNS(gtsz, "GetTreeSize", 50, true);
     #endif
     *size += 1;
@@ -880,10 +892,7 @@ void GetTreeSize(BinField* value, uint32_t* size)
             {
                 if (cs->items[i]->value != NULL)
                 {
-                    if (cs->valueType >= CONTAINER && cs->valueType != LINK && cs->valueType != FLAG)
-                    {
-                        GetTreeSize(cs->items[i]->value, size);
-                    }
+                    GetTreeSize(cs->items[i]->value, size);
                 }
             }
             break;
@@ -898,11 +907,7 @@ void GetTreeSize(BinField* value, uint32_t* size)
                 {
                     if (pe->items[i]->value != NULL)
                     {
-                        Type typi = pe->items[i]->value->type;
-                        if (typi >= CONTAINER && typi != LINK && typi != FLAG)
-                        {
-                            GetTreeSize(pe->items[i]->value, size);
-                        }
+                        GetTreeSize(pe->items[i]->value, size);
                     }
                 }
             }
@@ -915,10 +920,8 @@ void GetTreeSize(BinField* value, uint32_t* size)
             {
                 if (mp->items[i]->key != NULL)
                 {                      
-                    if (mp->keyType >= CONTAINER && mp->keyType != LINK && mp->keyType != FLAG)
-                        GetTreeSize(mp->items[i]->key, size);
-                    if (mp->valueType >= CONTAINER && mp->valueType != LINK && mp->valueType != FLAG)
-                        GetTreeSize(mp->items[i]->value, size);
+                    GetTreeSize(mp->items[i]->key, size);
+                    GetTreeSize(mp->items[i]->value, size);
                 }
             }
             break;
@@ -928,7 +931,7 @@ void GetTreeSize(BinField* value, uint32_t* size)
 
 bool CanChangeBackcolor(BinField* value)
 {
-    #ifdef TRACY_ENABLE
+    #ifdef TRACY_ENABLE_ZONES
         ZoneNamedNS(ccbcz, "CanChangeBackcolor", 50, true);
     #endif
     switch (value->type)
@@ -991,7 +994,7 @@ bool CanChangeBackcolor(BinField* value)
 
 void SetTreeCloseState(BinField* value, ImGuiWindow* window)
 {
-    #ifdef TRACY_ENABLE
+    #ifdef TRACY_ENABLE_ZONES
         ZoneNamedNS(stosz, "SetTreeOpenState", 50, true);
     #endif
     switch (value->type)
@@ -1060,7 +1063,7 @@ void SetTreeCloseState(BinField* value, ImGuiWindow* window)
 
 BinField* BinFieldClean(Type typi, Type typo, Type typu)
 {
-    #ifdef TRACY_ENABLE
+    #ifdef TRACY_ENABLE_ZONES
         ZoneNamedN(bfcz, "BinFieldClean", true);
     #endif
     BinField* result = (BinField*)callocb(1, sizeof(BinField));
@@ -1091,7 +1094,7 @@ BinField* BinFieldClean(Type typi, Type typo, Type typu)
 
 void BinFieldAdd(uintptr_t id, int* current1, int* current2, int* current3, bool showfirst = false)
 {
-    #ifdef TRACY_ENABLE
+    #ifdef TRACY_ENABLE_ZONES
         ZoneNamedN(bfaz, "BinFieldAdd", true);
     #endif
     if (showfirst)
@@ -1129,9 +1132,25 @@ void BinFieldAdd(uintptr_t id, int* current1, int* current2, int* current3, bool
     }
 }
 
-bool ButtonExe(uintptr_t ide)
+bool IsItemVisible(ImGuiWindow* window)
 {
-    #ifdef TRACY_ENABLE
+#ifdef TRACY_ENABLE_ZONES
+    ZoneNamedN(iivz, "IsItemVisible", true);
+#endif
+    ImVec2 cursor = window->DC.CursorPos;
+    ImVec2 clipmin = window->ClipRect.Min;
+    ImVec2 clipmax = window->ClipRect.Max;
+#ifdef NDEBUG
+    clipmin.y -= 50; clipmax.y += 50;
+#else
+    clipmin.y += 50; clipmax.y -= 50;
+#endif
+    return cursor.y > clipmin.y && cursor.y < clipmax.y;
+}
+
+bool MyButtonEx(uintptr_t ide)
+{
+    #ifdef TRACY_ENABLE_ZONES
         ZoneNamedN(bez, "ButtonExe", true);
     #endif
     ImGuiWindow* window = ImGui::GetCurrentWindow();
@@ -1168,13 +1187,147 @@ bool ButtonExe(uintptr_t ide)
     return pressed;
 }
 
+bool MyTreeNodeEx(uintptr_t idp)
+{
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    if (window->SkipItems)
+        return false;
+
+    ImGuiID id = window->GetID((void*)idp);
+
+    ImGuiContext& g = *GImGui;
+    const ImGuiStyle& style = g.Style;
+
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth;
+
+    ImRect frame_bb;
+    const float frame_height = ImMax(ImMin(window->DC.CurrLineSize.y, g.FontSize + style.FramePadding.y * 2), g.FontSize + style.FramePadding.y * 2);
+    frame_bb.Min.x = (flags & ImGuiTreeNodeFlags_SpanFullWidth) ? window->WorkRect.Min.x : window->DC.CursorPos.x;
+    frame_bb.Min.y = window->DC.CursorPos.y;
+    frame_bb.Max.x = window->WorkRect.Max.x;
+    frame_bb.Max.y = window->DC.CursorPos.y + frame_height;
+    frame_bb.Min.x -= IM_FLOOR(window->WindowPadding.x * 0.5f - 1.0f);
+    frame_bb.Max.x += IM_FLOOR(window->WindowPadding.x * 0.5f);
+
+    const float text_offset_x = g.FontSize + style.FramePadding.x * 3;
+    const float text_offset_y = ImMax(style.FramePadding.y, window->DC.CurrLineTextBaseOffset);
+    ImVec2 text_pos(window->DC.CursorPos.x + text_offset_x, window->DC.CursorPos.y + text_offset_y);
+    ImGui::ItemSize(ImVec2(g.FontSize, frame_height), style.FramePadding.y);
+
+    ImRect interact_bb = frame_bb;
+    const bool is_leaf = (flags & ImGuiTreeNodeFlags_Leaf) != 0;
+    bool is_open = ImGui::TreeNodeBehaviorIsOpen(id, flags);
+    if (is_open && !g.NavIdIsAlive && (flags & ImGuiTreeNodeFlags_NavLeftJumpsBackHere) && !(flags & ImGuiTreeNodeFlags_NoTreePushOnOpen))
+        window->DC.TreeJumpToParentOnPopMask |= (1 << window->DC.TreeDepth);
+
+    bool item_add = ImGui::ItemAdd(interact_bb, id);
+    window->DC.LastItemStatusFlags |= ImGuiItemStatusFlags_HasDisplayRect;
+    window->DC.LastItemDisplayRect = frame_bb;
+
+    if (!item_add)
+    {
+        if (is_open && !(flags & ImGuiTreeNodeFlags_NoTreePushOnOpen))
+            ImGui::TreePushOverrideID(id);
+        return is_open;
+    }
+
+    ImGuiButtonFlags button_flags = ImGuiTreeNodeFlags_None;
+    if (flags & ImGuiTreeNodeFlags_AllowItemOverlap)
+        button_flags |= ImGuiButtonFlags_AllowItemOverlap;
+    if (!is_leaf)
+        button_flags |= ImGuiButtonFlags_PressedOnDragDropHold;
+
+    const float arrow_hit_x1 = (text_pos.x - text_offset_x) - style.TouchExtraPadding.x;
+    const float arrow_hit_x2 = (text_pos.x - text_offset_x) + (g.FontSize + style.FramePadding.x * 2.0f) + style.TouchExtraPadding.x;
+    const bool is_mouse_x_over_arrow = (g.IO.MousePos.x >= arrow_hit_x1 && g.IO.MousePos.x < arrow_hit_x2);
+    if (window != g.HoveredWindow || !is_mouse_x_over_arrow)
+        button_flags |= ImGuiButtonFlags_NoKeyModifiers;
+
+    if (is_mouse_x_over_arrow)
+        button_flags |= ImGuiButtonFlags_PressedOnClick;
+    else if (flags & ImGuiTreeNodeFlags_OpenOnDoubleClick)
+        button_flags |= ImGuiButtonFlags_PressedOnClickRelease | ImGuiButtonFlags_PressedOnDoubleClick;
+    else
+        button_flags |= ImGuiButtonFlags_PressedOnClickRelease;
+
+    bool selected = (flags & ImGuiTreeNodeFlags_Selected) != 0;
+    const bool was_selected = selected;
+
+    bool hovered, held;
+    bool pressed = ImGui::ButtonBehavior(interact_bb, id, &hovered, &held, button_flags);
+    bool toggled = false;
+    if (!is_leaf)
+    {
+        if (pressed && g.DragDropHoldJustPressedId != id)
+        {
+            if ((flags & (ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick)) == 0 || (g.NavActivateId == id))
+                toggled = true;
+            if (flags & ImGuiTreeNodeFlags_OpenOnArrow)
+                toggled |= is_mouse_x_over_arrow && !g.NavDisableMouseHover;
+            if ((flags & ImGuiTreeNodeFlags_OpenOnDoubleClick) && g.IO.MouseDoubleClicked[0])
+                toggled = true;
+        }
+        else if (pressed && g.DragDropHoldJustPressedId == id)
+        {
+            IM_ASSERT(button_flags & ImGuiButtonFlags_PressedOnDragDropHold);
+            if (!is_open) 
+                toggled = true;
+        }
+
+        if (g.NavId == id && g.NavMoveRequest && g.NavMoveDir == ImGuiDir_Left && is_open)
+        {
+            toggled = true;
+            ImGui::NavMoveRequestCancel();
+        }
+        if (g.NavId == id && g.NavMoveRequest && g.NavMoveDir == ImGuiDir_Right && !is_open)
+        {
+            toggled = true;
+            ImGui::NavMoveRequestCancel();
+        }
+
+        if (toggled)
+        {
+            is_open = !is_open;
+            window->DC.StateStorage->SetInt(id, is_open);
+            window->DC.LastItemStatusFlags |= ImGuiItemStatusFlags_ToggledOpen;
+        }
+    }
+    if (flags & ImGuiTreeNodeFlags_AllowItemOverlap)
+        ImGui::SetItemAllowOverlap();
+
+    if (selected != was_selected) 
+        window->DC.LastItemStatusFlags |= ImGuiItemStatusFlags_ToggledSelection;
+
+    const ImU32 text_col = ImGui::GetColorU32(ImGuiCol_Text);
+    ImGuiNavHighlightFlags nav_highlight_flags = ImGuiNavHighlightFlags_TypeThin;
+
+    const ImU32 bg_col = ImGui::GetColorU32((held && hovered) ? ImGuiCol_HeaderActive : hovered ? ImGuiCol_HeaderHovered : ImGuiCol_Header);
+    if (IsItemVisible(window))
+    {
+        ImGui::RenderFrame(frame_bb.Min, frame_bb.Max, bg_col, true, style.FrameRounding);
+        ImGui::RenderNavHighlight(frame_bb, id, nav_highlight_flags);
+        ImGui::RenderArrow(window->DrawList, ImVec2(text_pos.x - text_offset_x + style.FramePadding.x, text_pos.y), text_col, is_open ? ImGuiDir_Down : ImGuiDir_Right, 1.0f);
+    }
+
+    if (flags & ImGuiTreeNodeFlags_ClipLabelForTrailingButton)
+        frame_bb.Max.x -= g.FontSize + style.FramePadding.x;
+
+    if (g.LogEnabled)
+        ImGui::LogSetNextTextDecoration("###", "###");
+
+    if (is_open)
+        ImGui::TreePushOverrideID(id);
+
+    return is_open;
+}
+
 bool BinFieldDelete(uintptr_t id)
 {
-    #ifdef TRACY_ENABLE
+    #ifdef TRACY_ENABLE_ZONES
         ZoneNamedN(bfdz, "BinFieldDelete", true);
     #endif
     bool ret = false;
-    bool retb = ButtonExe(id);
+    bool retb = MyButtonEx(id);
     #ifdef _DEBUG
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Delete item? %d", id);
@@ -1207,22 +1360,6 @@ bool BinFieldDelete(uintptr_t id)
     return ret;
 }
 
-bool IsItemVisible(ImGuiWindow* window)
-{
-    #ifdef TRACY_ENABLE
-        ZoneNamedN(iivz, "IsItemVisible", true);
-    #endif
-    ImVec2 cursor = window->DC.CursorPos;
-    ImVec2 clipmin = window->ClipRect.Min;
-    ImVec2 clipmax = window->ClipRect.Max;
-#ifdef NDEBUG
-    clipmin.y -= 50; clipmax.y += 50;
-#else
-    clipmin.y += 50; clipmax.y -= 50;
-#endif
-    return cursor.y > clipmin.y && cursor.y < clipmax.y;
-}
-
 void NewLine(ImGuiWindow* window)
 {
     ImRect total_bb(window->DC.CursorPos, ImVec2(window->DC.CursorPos.x, window->DC.CursorPos.y + GImGui->FontSize + GImGui->Style.FramePadding.y * 2.f));
@@ -1231,7 +1368,7 @@ void NewLine(ImGuiWindow* window)
 
 void DrawRectRainBow(BinField* value, ImGuiWindow* window, float depth)
 {
-    #ifdef TRACY_ENABLE
+    #ifdef TRACY_ENABLE_ZONES
         ZoneNamedNS(drrbz, "DrawRectRainBow", 50, true);
     #endif
     switch (value->type)
@@ -1369,7 +1506,7 @@ void DrawRectRainBow(BinField* value, ImGuiWindow* window, float depth)
 
 void DrawRectNormal(BinField* value, ImGuiWindow* window, float depth)
 {
-    #ifdef TRACY_ENABLE
+    #ifdef TRACY_ENABLE_ZONES
         ZoneNamedNS(drnz, "DrawRectNormal", 50, true);
     #endif
     if (depth > 0.15f)
@@ -1404,7 +1541,7 @@ void DrawRectNormal(BinField* value, ImGuiWindow* window, float depth)
                                         if (CanChangeBackcolor(cs->items[i]->value))
                                             col.SetHSV(0.f, .0f, depth * 1.3f);
                                     window->DrawList->AddRectFilled(cs->items[i]->cursormin, cs->items[i]->cursormax, col);
-                                    window->DrawList->AddRect(cs->items[i]->cursormin, cs->items[i]->cursormax, IM_COL32_GREY);
+                                    window->DrawList->AddRect(cs->items[i]->cursormin, cs->items[i]->cursormax, IM_COL32(128, 128, 128, 255));
                                     cs->items[i]->cursormax.x = 0.f;
                                 }
                             }
@@ -1433,7 +1570,7 @@ void DrawRectNormal(BinField* value, ImGuiWindow* window, float depth)
                                 if (pe->items[i]->cursormax.x != 0.f)
                                 {
                                     if (pe->items[i]->cursormin.y < (window->ClipRect.Max.y + 50.f) &&
-                                        pe->items[i]->cursormax.y >(window->ClipRect.Min.y + 50.f))
+                                        pe->items[i]->cursormax.y > (window->ClipRect.Min.y + 50.f))
                                     {
                                         pe->items[i]->cursormin.x -= IM_FLOOR(window->WindowPadding.x * 0.5f - 1.0f);
                                         pe->items[i]->cursormax.x += IM_FLOOR(window->WindowPadding.x * 0.5f);
@@ -1445,7 +1582,7 @@ void DrawRectNormal(BinField* value, ImGuiWindow* window, float depth)
                                             if (CanChangeBackcolor(pe->items[i]->value))
                                                 col.SetHSV(0.f, .0f, depth * 1.3f);
                                         window->DrawList->AddRectFilled(pe->items[i]->cursormin, pe->items[i]->cursormax, col);
-                                        window->DrawList->AddRect(pe->items[i]->cursormin, pe->items[i]->cursormax, IM_COL32_GREY);
+                                        window->DrawList->AddRect(pe->items[i]->cursormin, pe->items[i]->cursormax, IM_COL32(128, 128, 128, 255));
                                         pe->items[i]->cursormax.x = 0.f;
                                     }
                                 }
@@ -1469,7 +1606,7 @@ void DrawRectNormal(BinField* value, ImGuiWindow* window, float depth)
                         if (mp->items[i]->cursormax.x != 0.f)
                         {
                             if (mp->items[i]->cursormin.y < (window->ClipRect.Max.y + 50.f) &&
-                                mp->items[i]->cursormax.y >(window->ClipRect.Min.y + 50.f))
+                                mp->items[i]->cursormax.y > (window->ClipRect.Min.y + 50.f))
                             {
                                 mp->items[i]->cursormin.x -= IM_FLOOR(window->WindowPadding.x * 0.5f - 1.0f);
                                 mp->items[i]->cursormax.x += IM_FLOOR(window->WindowPadding.x * 0.5f);
@@ -1481,7 +1618,7 @@ void DrawRectNormal(BinField* value, ImGuiWindow* window, float depth)
                                     if (CanChangeBackcolor(mp->items[i]->value))
                                         col.SetHSV(0.f, .0f, depth * 1.3f);
                                 window->DrawList->AddRectFilled(mp->items[i]->cursormin, mp->items[i]->cursormax, col);
-                                window->DrawList->AddRect(mp->items[i]->cursormin, mp->items[i]->cursormax, IM_COL32_GREY);
+                                window->DrawList->AddRect(mp->items[i]->cursormin, mp->items[i]->cursormax, IM_COL32(128, 128, 128, 255));
                                 mp->items[i]->cursormax.x = 0.f;
                             }
                         }
@@ -1496,9 +1633,9 @@ void DrawRectNormal(BinField* value, ImGuiWindow* window, float depth)
 }
 
 void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
-    ImGuiWindow* window, bool hasbeopened, bool* poe = NULL, ImVec2* cursor = NULL)
+    ImGuiWindow* window, bool opentree, bool* previousnode = NULL, ImVec2* cursor = NULL)
 {
-    #ifdef TRACY_ENABLE
+    #ifdef TRACY_ENABLE_ZONES
         ZoneNamedNS(gvftz, "GetValueFromType", 50, true);
         gvftz.Text(Type_strings[value->type], strlen(Type_strings[value->type]));
     #endif
@@ -1517,13 +1654,13 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
         case SInt64:
         case UInt64:
         {
-            char* buf = (char*)callocb(32, 1);
+            char* buf = (char*)callocb(64, 1);
             const char* fmt = Type_fmt[value->type];
-            myassert(sprintf(buf, fmt, *(uint64_t*)value->data) < 0);
+            myassert(sprintf_s(buf, 64, fmt, *(uint64_t*)value->data) <= 0);
             char* string = InputText(buf, value->id);
             if (string != NULL)
             {
-                myassert(sscanf(string, fmt, value->data) < 0);
+                myassert(sscanf_s(string, fmt, value->data) <= 0);
                 freeb(string);
             }
             freeb(buf);
@@ -1559,10 +1696,10 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
             for (int i = 0; i < 4; i++)
             {
                 char* buf = (char*)callocb(64, 1);
-                myassert(sprintf(buf, "%" PRIu8, arr[i]) < 0);
+                myassert(sprintf_s(buf, 64, "%" PRIu8, arr[i]) <= 0);
                 char* string = InputText(buf, value->id + i, size);
                 if (string != NULL)
-                    myassert(sscanf(string, "%" PRIu8, &arr[i]) < 0);
+                    myassert(sscanf_s(string, "%" PRIu8, &arr[i]) <= 0);
                 freeb(string);
                 freeb(buf);
                 if (i < 3)
@@ -1592,7 +1729,7 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
         case CONTAINER:
         {
             ContainerOrStructOrOption* cs = (ContainerOrStructOrOption*)value->data;
-#ifdef TRACY_ENABLE
+#ifdef TRACY_ENABLE_ZONES
             ZoneNamedN(cspz, "ContainerOrStructOrOption", true);
             cspz.Text(Type_strings[cs->valueType], strlen(Type_strings[cs->valueType]));
 #endif
@@ -1602,12 +1739,11 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
                 {
                     if (cs->items[i]->value != NULL)
                     {
-                        if (hasbeopened)
+                        if (opentree)
                             ImGui::SetNextItemOpen(true);
                         cs->items[i]->cursormin = window->DC.CursorPos;
                         ImGui::AlignTextToFramePadding();
-                        cs->items[i]->expanded = ImGui::TreeNodeEx((void*)cs->items[i]->id, ImGuiTreeNodeFlags_Framed |
-                            ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth, "");
+                        cs->items[i]->expanded = MyTreeNodeEx(cs->items[i]->id);
                         cs->items[i]->idim = window->IDStack.back();
                         ImGui::AlignTextToFramePadding();
                         if (IsItemVisible(window))
@@ -1629,20 +1765,19 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
                             }
                             else if (cs->items[i]->expanded) {
                                 ImGui::Indent();
-                                GetValueFromType(cs->items[i]->value, hasht, treeid, window, hasbeopened);
+                                GetValueFromType(cs->items[i]->value, hasht, treeid, window, opentree);
                                 ImGui::Unindent();
                                 ImGui::TreePop();
                             }
                         }
                         else if (cs->items[i]->expanded) {
                             ImGui::Indent();
-                            GetValueFromType(cs->items[i]->value, hasht, treeid, window, hasbeopened);
+                            GetValueFromType(cs->items[i]->value, hasht, treeid, window, opentree);
                             ImGui::Unindent();
                             ImGui::TreePop();
                         }
                         if (cs->items[i]->expanded)
-                            cs->items[i]->cursormax = ImVec2(window->WorkRect.Max.x,
-                                window->DC.CursorMaxPos.y);                  
+                            cs->items[i]->cursormax = ImVec2(window->WorkRect.Max.x, window->DC.CursorMaxPos.y);                  
                         else
                             cs->items[i]->isover = false;
                     }
@@ -1653,12 +1788,11 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
                 {
                     if (cs->items[i]->value != NULL)
                     {
-                        if (hasbeopened)
+                        if (opentree)
                             ImGui::SetNextItemOpen(true);
                         cs->items[i]->cursormin = window->DC.CursorPos;
                         ImGui::AlignTextToFramePadding();
-                        cs->items[i]->expanded = ImGui::TreeNodeEx((void*)cs->items[i]->id, ImGuiTreeNodeFlags_Framed |
-                            ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth, "");
+                        cs->items[i]->expanded = MyTreeNodeEx(cs->items[i]->id);
                         cs->items[i]->idim = window->IDStack.back();
                         if (IsItemVisible(window))
                         {
@@ -1669,7 +1803,7 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
 #endif
                             ImGui::SameLine();
                             GetValueFromType(cs->items[i]->value, hasht, treeid, window,
-                                hasbeopened, &cs->items[i]->expanded, &cursor);
+                                opentree, &cs->items[i]->expanded, &cursor);
                             cursore = ImGui::GetCursorPos();
                             ImGui::SetCursorPos(cursor);
                             if (BinFieldDelete(cs->items[i]->id+1))
@@ -1682,7 +1816,7 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
                         else if (cs->items[i]->expanded) {
                             ImGui::SameLine();
                             GetValueFromType(cs->items[i]->value, hasht, treeid, window,
-                                hasbeopened, &cs->items[i]->expanded);
+                                opentree, &cs->items[i]->expanded);
                         }
                         if (cs->items[i]->expanded)
                         {
@@ -1692,8 +1826,7 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
                                 cs->items[i]->cursormax.x = 0.f;
                                 continue;
                             }
-                            cs->items[i]->cursormax = ImVec2(window->WorkRect.Max.x,
-                                window->DC.CursorMaxPos.y);
+                            cs->items[i]->cursormax = ImVec2(window->WorkRect.Max.x, window->DC.CursorMaxPos.y);
                         } 
                         else
                             cs->items[i]->isover = false;
@@ -1708,7 +1841,7 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
                         if (IsItemVisible(window))
                         {
                             ImGui::AlignTextToFramePadding();
-                            GetValueFromType(cs->items[i]->value, hasht, treeid, window, hasbeopened);
+                            GetValueFromType(cs->items[i]->value, hasht, treeid, window, opentree);
                             ImGui::SameLine();
                             if (BinFieldDelete(cs->items[i]->id))
                             {
@@ -1749,19 +1882,18 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
         case EMBEDDED:
         {
             PointerOrEmbed* pe = (PointerOrEmbed*)value->data;
-#ifdef TRACY_ENABLE
+#ifdef TRACY_ENABLE_ZONES
             ZoneNamedN(pez, "PointerOrEmbed", true);
 #endif
             if (pe->name != NULL)
             {
-                bool treeopen = false;
+                bool peexpanded = false;
                 ImGui::AlignTextToFramePadding();
-                if (poe == NULL)
+                if (previousnode == NULL)
                 {
-                    if (hasbeopened)
+                    if (opentree)
                         ImGui::SetNextItemOpen(true);
-                    treeopen = ImGui::TreeNodeEx((void*)value->id, ImGuiTreeNodeFlags_Framed |
-                        ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth, "");
+                    peexpanded = MyTreeNodeEx(value->id);
                     pe->idim = window->IDStack.back();
                     ImGui::AlignTextToFramePadding();
                     if (IsItemVisible(window))
@@ -1780,7 +1912,7 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
                     }
                 }
                 else {
-                    treeopen = *poe;
+                    peexpanded = *previousnode;
                     if (IsItemVisible(window))
                     {
                         ImGui::SameLine();
@@ -1797,7 +1929,7 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
                     ImGui::SameLine(); *cursor = ImGui::GetCursorPos();
                     ImGui::SetCursorPos(old);
                 }
-                if (treeopen)
+                if (peexpanded)
                 {
                     ImGui::Indent();
                     for (uint16_t i = 0; i < pe->itemsize; i++)
@@ -1805,17 +1937,16 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
                         if (pe->items[i]->value != NULL)
                         {
                             Type typi = pe->items[i]->value->type;
-#ifdef TRACY_ENABLE
+#ifdef TRACY_ENABLE_ZONES
                             pez.Text(Type_strings[typi], strlen(Type_strings[typi]));
 #endif
                             if ((typi >= CONTAINER && typi <= EMBEDDED) || typi == OPTION || typi == MAP)
                             {
-                                if (hasbeopened)
+                                if (opentree)
                                     ImGui::SetNextItemOpen(true);
                                 pe->items[i]->cursormin = window->DC.CursorPos;
                                 ImGui::AlignTextToFramePadding();
-                                pe->items[i]->expanded = ImGui::TreeNodeEx((void*)pe->items[i]->id, ImGuiTreeNodeFlags_Framed |
-                                    ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth, "");
+                                pe->items[i]->expanded = MyTreeNodeEx(pe->items[i]->id);
                                 pe->items[i]->idim = window->IDStack.back();
                                 if (IsItemVisible(window))
                                 {
@@ -1840,7 +1971,7 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
                                         }
                                         else if (pe->items[i]->expanded) {
                                             ImGui::Indent();
-                                            GetValueFromType(pe->items[i]->value, hasht, treeid, window, hasbeopened);
+                                            GetValueFromType(pe->items[i]->value, hasht, treeid, window, opentree);
                                             ImGui::Unindent();
                                             ImGui::TreePop();
                                         }
@@ -1849,7 +1980,7 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
                                         ImVec2 cursore, cursor;
                                         ImGui::SameLine(); ImGui::Text(":"); ImGui::SameLine();
                                         GetValueFromType(pe->items[i]->value, hasht, treeid, window, 
-                                            hasbeopened, &pe->items[i]->expanded, &cursor);
+                                            opentree, &pe->items[i]->expanded, &cursor);
                                         cursore = ImGui::GetCursorPos();
                                         ImGui::SetCursorPos(cursor);
                                         if (BinFieldDelete(pe->items[i]->id+2))
@@ -1866,7 +1997,7 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
                                     if (pe->items[i]->expanded)
                                     {
                                         ImGui::Indent();
-                                        GetValueFromType(pe->items[i]->value, hasht, treeid, window, hasbeopened);
+                                        GetValueFromType(pe->items[i]->value, hasht, treeid, window, opentree);
                                         ImGui::Unindent();
                                         ImGui::TreePop();
                                     }          
@@ -1874,7 +2005,7 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
                                 else {
                                     ImGui::SameLine();
                                     GetValueFromType(pe->items[i]->value, hasht, treeid, window,
-                                            hasbeopened, &pe->items[i]->expanded);
+                                            opentree, &pe->items[i]->expanded);
                                     if (pe->items[i]->expanded)
                                         ImGui::TreePop();
                                 }
@@ -1888,8 +2019,7 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
                                             continue;
                                         }
                                     }
-                                    pe->items[i]->cursormax = ImVec2(window->WorkRect.Max.x,
-                                         window->DC.CursorMaxPos.y);
+                                    pe->items[i]->cursormax = ImVec2(window->WorkRect.Max.x, window->DC.CursorMaxPos.y);
                                 }
                                 else
                                     pe->items[i]->isover = false;
@@ -1899,7 +2029,7 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
                                 InputTextHash(hasht, &pe->items[i]->key, pe->items[i]->id);
                                 ImGui::SameLine(); ImGui::Text(": %s", Type_strings[typi]);
                                 ImGui::SameLine(); ImGui::Text("="); ImGui::SameLine();
-                                GetValueFromType(pe->items[i]->value, hasht, treeid, window, hasbeopened);
+                                GetValueFromType(pe->items[i]->value, hasht, treeid, window, opentree);
                                 ImGui::SameLine();
                                 if (BinFieldDelete(pe->items[i]->id+1))
                                 {
@@ -1933,7 +2063,7 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
                         NewLine(window);
                     }
                     ImGui::Unindent();
-                    if (poe == NULL)
+                    if (previousnode == NULL)
                         ImGui::TreePop();
                 }
             }
@@ -1948,19 +2078,18 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
         case MAP:
         {
             Map* mp = (Map*)value->data;
-#ifdef TRACY_ENABLE
+#ifdef TRACY_ENABLE_ZONES
             ZoneNamedN(mpz, "Map", true);
 #endif
             for (uint32_t i = 0; i < mp->itemsize; i++)
             {
                 if (mp->items[i]->key != NULL)
                 {
-                    if (hasbeopened)
+                    if (opentree)
                         ImGui::SetNextItemOpen(true);
                     mp->items[i]->cursormin = window->DC.CursorPos;
                     ImGui::AlignTextToFramePadding();
-                    mp->items[i]->expanded = ImGui::TreeNodeEx((void*)mp->items[i]->id, ImGuiTreeNodeFlags_Framed |
-                        ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth, "");
+                    mp->items[i]->expanded = MyTreeNodeEx(mp->items[i]->id);
                     mp->items[i]->idim = window->IDStack.back();
                     ImGui::AlignTextToFramePadding();
                     if (IsItemVisible(window))
@@ -1969,13 +2098,13 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
                         if (ImGui::IsItemHovered())
                             ImGui::SetTooltip("%d", mp->items[i]->id);
 #endif
-#ifdef TRACY_ENABLE
+#ifdef TRACY_ENABLE_ZONES
                         mpz.Text(Type_strings[mp->keyType], strlen(Type_strings[mp->keyType]));
                         mpz.Text(Type_strings[mp->valueType], strlen(Type_strings[mp->valueType]));
 #endif
                         ImGui::SameLine(); ImGui::Text("%s", Type_strings[mp->keyType]);
                         ImGui::SameLine(); ImGui::Text("="); ImGui::SameLine();
-                        GetValueFromType(mp->items[i]->key, hasht, treeid, window, hasbeopened);
+                        GetValueFromType(mp->items[i]->key, hasht, treeid, window, opentree);
                         ImGui::SameLine();
                         if (BinFieldDelete(mp->items[i]->id+1))
                         {
@@ -1992,7 +2121,7 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
                         }
                     }
                     else if (mp->keyType >= CONTAINER && mp->keyType != LINK && mp->keyType != FLAG) {
-                        GetValueFromType(mp->items[i]->key, hasht, treeid, window, hasbeopened);
+                        GetValueFromType(mp->items[i]->key, hasht, treeid, window, opentree);
                     }
                     else if (mp->keyType == MTX44) {
                         for (int o = 0; o < 3; o++)
@@ -2009,12 +2138,12 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
                                 ImGui::Text("%s", Type_strings[mp->valueType]);
                                 ImGui::SameLine(); ImGui::Text("="); ImGui::SameLine();
                             }
-                            GetValueFromType(mp->items[i]->value, hasht, treeid, window, hasbeopened);
+                            GetValueFromType(mp->items[i]->value, hasht, treeid, window, opentree);
                             ImGui::Unindent();
                         }
                         else if (mp->valueType >= CONTAINER && mp->valueType != LINK && mp->valueType != FLAG) {
                             ImGui::Indent();
-                            GetValueFromType(mp->items[i]->value, hasht, treeid, window, hasbeopened);
+                            GetValueFromType(mp->items[i]->value, hasht, treeid, window, opentree);
                             ImGui::Unindent();
                         }
                         else if (mp->valueType == MTX44) {
@@ -2033,8 +2162,7 @@ void GetValueFromType(BinField* value, HashTable* hasht, uintptr_t* treeid,
                                 continue;
                             }
                         }
-                        mp->items[i]->cursormax = ImVec2(window->WorkRect.Max.x,
-                            window->DC.CursorMaxPos.y);
+                        mp->items[i]->cursormax = ImVec2(window->WorkRect.Max.x, window->DC.CursorMaxPos.y);
                     }
                     else
                         mp->items[i]->isover = false;
@@ -2380,11 +2508,14 @@ typedef struct PacketBin
 
 PacketBin* DecodeBin(char* filepath, HashTable* hasht)
 {
-    PacketBin* packet = (PacketBin*)callocb(1, sizeof(PacketBin));
-    FILE* file = fopen(filepath, "rb");
-    if (!file)
+    FILE* file;
+    errno_t err = fopen_s(&file, filepath, "rb");
+    if (err)
     {
-        printf("ERROR: cannot read file %s.\n", filepath);
+        char* errmsg = (char*)callocb(255, 1);
+        strerror_s(errmsg, 255, err);
+        printf("ERROR: cannot read file %s %s.\n", filepath, errmsg);
+        free(errmsg);
         return NULL;
     }
 
@@ -2396,6 +2527,8 @@ PacketBin* DecodeBin(char* filepath, HashTable* hasht)
     myassert(fread(fp, fsize, 1, file) == NULL);
     fp[fsize] = '\0';
     fclose(file);
+
+    PacketBin* packet = (PacketBin*)callocb(1, sizeof(PacketBin));
 
     uint32_t Signature = 0;
     memfread(&Signature, 4, &fp);
@@ -2581,16 +2714,22 @@ int EncodeBin(char* filepath, PacketBin* packet)
 
     printf("finised creating bin file.\n");
     printf("writing to file.\n");
-    FILE* file = fopen(filepath, "wb");
-    if (!file)
+    FILE* file;
+    errno_t err = fopen_s(&file, filepath, "wb");
+    if (err)
     {
-        printf("ERROR: cannot write file %s.", filepath);
+        char* errmsg = (char*)callocb(255, 1);
+        strerror_s(errmsg, 255, err);
+        printf("ERROR: cannot write file %s %s.\n", filepath, errmsg);
+        free(errmsg);
         return 1;
     }
+
     fwrite(str->data, str->lenght, 1, file);
     printf("finised writing to file.\n");
     fclose(file);
     freeb(str->data);
+
     return 0;
 }
 
