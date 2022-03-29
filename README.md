@@ -7,4 +7,5 @@ League Of Legends Bin Reader And Writter with GUI
 * https://github.com/CommunityDragon/CDTB
 * https://github.com/ocornut/imgui
 
-![alt text](BinReaderGUI_image.png)
+![alt text 1](BinReaderGUI_image.png)
+![alt text 2](BinReaderGUI_image_rgb.png)
