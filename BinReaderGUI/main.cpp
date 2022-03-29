@@ -99,6 +99,7 @@ int main()
 
 	printf("Finised loading ternary\n\n");
 
+	char msgTitle[512] = { '\0' };
 	char openPath[MAX_PATH] = { '\0' };
 	char savePath[MAX_PATH] = { '\0' };
 	char openFile[MAX_PATH] = { '\0' };
@@ -110,53 +111,85 @@ int main()
 	LSTATUS regStatus = 0;
 	HKEY regkeyresult = nullptr;
 	regStatus = RegOpenKeyExA(HKEY_CURRENT_USER, "SOFTWARE\\BinReaderGUI", 0, KEY_ALL_ACCESS, &regkeyresult);
-	if (regStatus == ERROR_PATH_NOT_FOUND)
+	if (regStatus == ERROR_PATH_NOT_FOUND || regStatus == ERROR_FILE_NOT_FOUND)
 	{
 		regStatus = RegCreateKeyExA(HKEY_CURRENT_USER, "SOFTWARE\\BinReaderGUI", 0, nullptr,
 			REG_OPTION_NON_VOLATILE, KEY_WRITE | KEY_QUERY_VALUE, nullptr, &regkeyresult, nullptr);
 		if (regStatus != ERROR_SUCCESS)
-			printf("Creating key failed: %d %d\n", regStatus, GetLastError());
+		{
+			sprintf_s(msgTitle, 512, "Creating key failed: %d %d", regStatus, GetLastError());
+			MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+			exit(1);
+		}
 	}
 	else if (regStatus != ERROR_SUCCESS)
-		printf("Setting key value failed: %d %d\n", regStatus, GetLastError());
+	{
+		sprintf_s(msgTitle, 512, "Setting key value failed: %d %d", regStatus, GetLastError());
+		MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+		exit(1);
+	}
 
 	DWORD pathSize = MAX_PATH;
 	regStatus = RegGetValueA(HKEY_CURRENT_USER, "SOFTWARE\\BinReaderGUI", "openpath",
 		RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND, nullptr, openPath, &pathSize);
-	if (regStatus == ERROR_FILE_NOT_FOUND)
+	if (regStatus == ERROR_FILE_NOT_FOUND || regStatus == ERROR_FILE_NOT_FOUND)
 	{
 		regStatus = RegSetValueExA(regkeyresult, "openpath", 0, REG_EXPAND_SZ, (LPCBYTE)currentPath, MAX_PATH);
 		if (regStatus != ERROR_SUCCESS)
-			printf("Setting key value failed: %d %d\n", regStatus, GetLastError());
+		{
+			sprintf_s(msgTitle, 512, "Setting key value failed: %d %d", regStatus, GetLastError());
+			MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+			exit(1);
+		}
 	}
 	else if (regStatus != ERROR_SUCCESS)
-		printf("Getting key value failed: %d %d\n", regStatus, GetLastError());
+	{
+		sprintf_s(msgTitle, 512, "Getting key value failed: %d %d", regStatus, GetLastError());
+		MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+		exit(1);
+	}
 
 	pathSize = MAX_PATH;
 	regStatus = RegGetValueA(HKEY_CURRENT_USER, "SOFTWARE\\BinReaderGUI", "savepath",
 		RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND, nullptr, savePath, &pathSize);
-	if (regStatus == ERROR_FILE_NOT_FOUND)
+	if (regStatus == ERROR_FILE_NOT_FOUND || regStatus == ERROR_FILE_NOT_FOUND)
 	{
 		regStatus = RegSetValueExA(regkeyresult, "savepath", 0, REG_EXPAND_SZ, (LPCBYTE)currentPath, MAX_PATH);
 		if (regStatus != ERROR_SUCCESS)
-			printf("Setting key value failed: %d %d\n", regStatus, GetLastError());
+		{
+			sprintf_s(msgTitle, 512, "Setting key value failed: %d %d", regStatus, GetLastError());
+			MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+			exit(1);
+		}
 	}
 	else if (regStatus != ERROR_SUCCESS)
-		printf("Getting key value failed: %d %d\n", regStatus, GetLastError());
+	{
+		sprintf_s(msgTitle, 512, "Getting key value failed: %d %d", regStatus, GetLastError());
+		MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+		exit(1);
+	}
 
 	pathSize = 4;
 	DWORD vSync = 0;
 	regStatus = RegGetValueA(HKEY_CURRENT_USER, "SOFTWARE\\BinReaderGUI", "vsync",
 		RRF_RT_REG_DWORD, nullptr, &vSync, &pathSize);
-	if (regStatus == ERROR_FILE_NOT_FOUND)
+	if (regStatus == ERROR_FILE_NOT_FOUND || regStatus == ERROR_FILE_NOT_FOUND)
 	{
 		vSync = 0;
 		regStatus = RegSetValueExA(regkeyresult, "vsync", 0, REG_DWORD, (LPCBYTE)&vSync, 4);
 		if (regStatus != ERROR_SUCCESS)
-			printf("Setting key value failed: %d %d\n", regStatus, GetLastError());
+		{
+			sprintf_s(msgTitle, 512, "Setting key value failed: %d %d", regStatus, GetLastError());
+			MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+			exit(1);
+		}
 	}
 	else if (regStatus != ERROR_SUCCESS)
-		printf("Getting key value failed: %d %d\n", regStatus, GetLastError());
+	{
+		sprintf_s(msgTitle, 512, "Getting key value failed: %d %d", regStatus, GetLastError());
+		MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+		exit(1);
+	}
 
 	RECT rectScreen;
 	HWND hwndScreen = GetDesktopWindow();
@@ -292,7 +325,11 @@ int main()
 					regStatus = RegGetValueA(HKEY_CURRENT_USER, "SOFTWARE\\BinReaderGUI", "openpath",
 						RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND, nullptr, openPath, &pathSize);
 					if (regStatus != ERROR_SUCCESS)
-						printf("Getting key value failed: %d %d\n", regStatus, GetLastError());
+					{
+						sprintf_s(msgTitle, 512, "Getting key value failed: %d %d", regStatus, GetLastError());
+						MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+						exit(1);
+					}
 
 					ofn.lStructSize = sizeof(ofn);
 					ofn.hwndOwner = glfwWindowNative;
@@ -318,7 +355,11 @@ int main()
 							regStatus = RegSetValueExA(regkeyresult, "openpath", 0, REG_EXPAND_SZ,
 								(LPCBYTE)openPath, (DWORD)openFileLen);
 							if (regStatus != ERROR_SUCCESS)
-								printf("Setting key value failed: %d %d\n", regStatus, GetLastError());
+							{
+								sprintf_s(msgTitle, 512, "Setting key value failed: %d %d", regStatus, GetLastError());
+								MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+								exit(1);
+							}
 
 							PacketBin packetNew; 
 							if (packetNew.DecodeBin(openFile, hashT, ternaryT))
@@ -360,7 +401,11 @@ int main()
 						regStatus = RegGetValueA(HKEY_CURRENT_USER, "SOFTWARE\\BinReaderGUI", "savepath",
 							RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND, nullptr, savePath, &pathSize);
 						if (regStatus != ERROR_SUCCESS)
-							printf("Getting key value failed: %d %d\n", regStatus, GetLastError());
+						{
+							sprintf_s(msgTitle, 512, "Getting key value failed: %d %d", regStatus, GetLastError());
+							MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+							exit(1);
+						}
 
 						ofn.lStructSize = sizeof(ofn);
 						ofn.hwndOwner = glfwWindowNative;
@@ -387,7 +432,11 @@ int main()
 								regStatus = RegSetValueExA(regkeyresult, "savepath", 0, REG_EXPAND_SZ,
 									(LPCBYTE)savePath, (DWORD)saveFileLen);
 								if (regStatus != ERROR_SUCCESS)
-									printf("Setting key value failed: %d %d\n", regStatus, GetLastError());
+								{
+									sprintf_s(msgTitle, 512, "Setting key value failed: %d %d", regStatus, GetLastError());
+									MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+									exit(1);
+								}
 
 								packet.EncodeBin(saveFile);
 							}
@@ -408,7 +457,12 @@ int main()
 					{
 						regStatus = RegSetValueExA(regkeyresult, "vsync", 0, REG_DWORD, (LPCBYTE)&vSync, 4);
 						if (regStatus != ERROR_SUCCESS)
-							printf("Setting key value failed: %d %d\n", regStatus, GetLastError());
+						{
+							sprintf_s(msgTitle, 512, "Setting key value failed: %d %d", regStatus, GetLastError());
+							MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+							exit(1);
+						}
+
 						glfwSwapInterval(vSync);
 					}
 				}
