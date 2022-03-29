@@ -1,11 +1,57 @@
 //author https://github.com/autergame
+
+#pragma comment(lib, "mimalloc-static")
+#pragma comment(lib, "opengl32")
+#pragma comment(lib, "glfw3")
+
+#pragma warning(push, 0)
+
+#ifdef TRACY_ENABLE
+#include <tracy/Tracy.hpp>
+#endif
+
+#include <new>
+#include <mimalloc.h>
+#include <Windows.h>
+
+#include <glad/glad.h>
+
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3.h>
+#include <GLFW/glfw3native.h>
+
+#define IMGUI_DEFINE_MATH_OPERATORS
+#include <imgui/imgui.h>
+#include <imgui/imgui_impl_glfw.h>
+#include <imgui/imgui_impl_opengl3.h>
+#include <imgui/imgui_internal.h>
+
+#pragma warning(pop)
+
+#include <inttypes.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <ctype.h>
+#include <locale.h>
+#include <errno.h>
+
+#include "MemoryWrapper.h"
+#include "Myassert.h"
+
+#include "Hashtable.h"
+#include "TernaryTree.h"
+#include "BinReader.h"
 #include "BinReaderLib.h"
+
+#include <algorithm>
+
 
 void glfw_error_callback(int error, const char* description)
 {
 	fprintf(stderr, "Glfw Error %d: %s\n", error, description);
-	scanf_s("press enter to exit.");
-	exit(1);
+	scanf_s("Press enter to exit.");
+	_Exit(EXIT_FAILURE);
 }
 
 void strip_filepath(char* fname)
@@ -26,24 +72,99 @@ int main()
 		ZoneNamedN(mz, "main", true);
 	#endif
 
-	printf("loading hashes.\n");
-	HashTable* hasht = CreateHashTable(1000);
-	AddToHashTable(hasht, "hashes.bintypes.txt");
-	AddToHashTable(hasht, "hashes.binfields.txt");
-	AddToHashTable(hasht, "hashes.binhashes.txt");
-	AddToHashTable(hasht, "hashes.binentries.txt");
+	printf("Loading hashes\n");
+
+	HashTable hashT;
+	hashT.LoadFromFile("hashes.bintypes.txt");
+	hashT.LoadFromFile("hashes.binfields.txt");
+	hashT.LoadFromFile("hashes.binhashes.txt");
+	hashT.LoadFromFile("hashes.binentries.txt");
 #ifdef NDEBUG
-	AddToHashTable(hasht, "hashes.game.txt", true);
-	AddToHashTable(hasht, "hashes.lcu.txt", true);
+	hashT.LoadFromFile("hashes.game.txt");
+	hashT.LoadFromFile("hashes.lcu.txt");
 #endif
-	printf("finised loading hashes.\n");
+
+	printf("Loaded total of hashes: %zd\n", hashT.table.size());
+
+	hashT.Insert(0xf9100aa9, "patch");
+	hashT.Insert(0x84874d36, "path");
+	hashT.Insert(0x425ed3ca, "value");
+
+	printf("Finised loading hashes\n\n");
+
+	printf("Loading ternary\n");
+
+	TernaryTree ternaryT;
+	ternaryT.LoadFromHashTable(hashT);
+
+	printf("Finised loading ternary\n\n");
+
+	char openPath[MAX_PATH] = { '\0' };
+	char savePath[MAX_PATH] = { '\0' };
+	char openFile[MAX_PATH] = { '\0' };
+	char saveFile[MAX_PATH] = { '\0' };
+
+	char currentPath[MAX_PATH] = { '\0' };
+	GetCurrentDirectoryA(MAX_PATH, currentPath);
+
+	LSTATUS regStatus = 0;
+	HKEY regkeyresult = nullptr;
+	regStatus = RegOpenKeyExA(HKEY_CURRENT_USER, "SOFTWARE\\BinReaderGUI", 0, KEY_ALL_ACCESS, &regkeyresult);
+	if (regStatus == ERROR_PATH_NOT_FOUND)
+	{
+		regStatus = RegCreateKeyExA(HKEY_CURRENT_USER, "SOFTWARE\\BinReaderGUI", 0, nullptr,
+			REG_OPTION_NON_VOLATILE, KEY_WRITE | KEY_QUERY_VALUE, nullptr, &regkeyresult, nullptr);
+		if (regStatus != ERROR_SUCCESS)
+			printf("Creating key failed: %d %d\n", regStatus, GetLastError());
+	}
+	else if (regStatus != ERROR_SUCCESS)
+		printf("Setting key value failed: %d %d\n", regStatus, GetLastError());
+
+	DWORD pathSize = MAX_PATH;
+	regStatus = RegGetValueA(HKEY_CURRENT_USER, "SOFTWARE\\BinReaderGUI", "openpath",
+		RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND, nullptr, openPath, &pathSize);
+	if (regStatus == ERROR_FILE_NOT_FOUND)
+	{
+		regStatus = RegSetValueExA(regkeyresult, "openpath", 0, REG_EXPAND_SZ, (LPCBYTE)currentPath, MAX_PATH);
+		if (regStatus != ERROR_SUCCESS)
+			printf("Setting key value failed: %d %d\n", regStatus, GetLastError());
+	}
+	else if (regStatus != ERROR_SUCCESS)
+		printf("Getting key value failed: %d %d\n", regStatus, GetLastError());
+
+	pathSize = MAX_PATH;
+	regStatus = RegGetValueA(HKEY_CURRENT_USER, "SOFTWARE\\BinReaderGUI", "savepath",
+		RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND, nullptr, savePath, &pathSize);
+	if (regStatus == ERROR_FILE_NOT_FOUND)
+	{
+		regStatus = RegSetValueExA(regkeyresult, "savepath", 0, REG_EXPAND_SZ, (LPCBYTE)currentPath, MAX_PATH);
+		if (regStatus != ERROR_SUCCESS)
+			printf("Setting key value failed: %d %d\n", regStatus, GetLastError());
+	}
+	else if (regStatus != ERROR_SUCCESS)
+		printf("Getting key value failed: %d %d\n", regStatus, GetLastError());
+
+	pathSize = 4;
+	DWORD vSync = 0;
+	regStatus = RegGetValueA(HKEY_CURRENT_USER, "SOFTWARE\\BinReaderGUI", "vsync",
+		RRF_RT_REG_DWORD, nullptr, &vSync, &pathSize);
+	if (regStatus == ERROR_FILE_NOT_FOUND)
+	{
+		vSync = 0;
+		regStatus = RegSetValueExA(regkeyresult, "vsync", 0, REG_DWORD, (LPCBYTE)&vSync, 4);
+		if (regStatus != ERROR_SUCCESS)
+			printf("Setting key value failed: %d %d\n", regStatus, GetLastError());
+	}
+	else if (regStatus != ERROR_SUCCESS)
+		printf("Getting key value failed: %d %d\n", regStatus, GetLastError());
 
 	RECT rectScreen;
 	HWND hwndScreen = GetDesktopWindow();
 	GetWindowRect(hwndScreen, &rectScreen);
-	int width = rectScreen.right * 0.75f, height = rectScreen.bottom * 0.75f;
-	int PosX = ((rectScreen.right - rectScreen.left) / 2 - width / 2);
-	int PosY = ((rectScreen.bottom - rectScreen.top) / 2 - height / 2);
+	int windowWidth = (int)((float)rectScreen.right * 0.75f);
+	int windowHeight = (int)((float)rectScreen.bottom * 0.75f);
+	int windowPosX = ((rectScreen.right - rectScreen.left) / 2 - windowWidth / 2);
+	int windowPosY = ((rectScreen.bottom - rectScreen.top) / 2 - windowHeight / 2);
 
 	glfwSetErrorCallback(glfw_error_callback);
 	myassert(glfwInit() == GLFW_FALSE)
@@ -53,22 +174,22 @@ int main()
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-	GLFWwindow* window = glfwCreateWindow(width, height, "BinReaderGUI", NULL, NULL);
-	myassert(window == NULL)
+	GLFWwindow *glfwWindow = glfwCreateWindow(windowWidth, windowHeight, "BinReaderGUI", nullptr, nullptr);
+	myassert(glfwWindow == nullptr)
 
-	glfwMakeContextCurrent(window);
-	glfwSwapInterval(0);
+	glfwMakeContextCurrent(glfwWindow);
+	glfwSwapInterval(vSync);
 
-	glfwSetWindowPos(window, PosX, PosY);
+	glfwSetWindowPos(glfwWindow, windowPosX, windowPosY);
 	myassert(gladLoadGL() == 0)
 
-	static ImGuiMemAllocFunc allocfunc = MallocbWrapper;
-	static ImGuiMemFreeFunc freefunc = FreebWrapper;
-	ImGui::SetAllocatorFunctions(allocfunc, freefunc);
+	static ImGuiMemAllocFunc allocFunc = MallocbWrapper;
+	static ImGuiMemFreeFunc freeFunc = FreebWrapper;
+	ImGui::SetAllocatorFunctions(allocFunc, freeFunc);
 	ImGui::CreateContext();
-	ImGui::GetIO().IniFilename = NULL;
-	ImGui_ImplGlfw_InitForOpenGL(window, true);
-	ImGui_ImplOpenGL3_Init("#version 130");
+	GImGui->IO.IniFilename = nullptr;
+	ImGui_ImplGlfw_InitForOpenGL(glfwWindow, true);
+	ImGui_ImplOpenGL3_Init("#version 330");
 	ImVec4* colors = GImGui->Style.Colors;
 	colors[ImGuiCol_FrameBg] = ImColor(76, 76, 76, 255);
 	colors[ImGuiCol_Header] = ImColor(51, 51, 51, 255);
@@ -87,96 +208,62 @@ int main()
 	GImGui->Style.FrameBorderSize = 1.f;
 	GImGui->Style.WindowBorderSize = 1.f;
 	GImGui->Style.IndentSpacing = GImGui->Style.FramePadding.x * 3.f - 2.f;
-	ImGui::GetIO().Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\consola.ttf", 13);
+	GImGui->IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\consola.ttf", 13);
 	int FULL_SCREEN_FLAGS = ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_AlwaysAutoResize |
 		ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
 		ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_HorizontalScrollbar;
 
-	HKEY testkey = nullptr;
-	LSTATUS testresult = RegOpenKeyExA(HKEY_CURRENT_USER, "SOFTWARE\\BinReaderGUI", 0, KEY_QUERY_VALUE, &testkey);
-	if (testresult != ERROR_SUCCESS) 
-	{
-		HKEY default_key;
-		char* currentpath = (char*)callocb(1, MAX_PATH);
-		GetCurrentDirectoryA(MAX_PATH, currentpath);
-		LSTATUS status = RegCreateKeyExA(HKEY_CURRENT_USER, "SOFTWARE\\BinReaderGUI", 0, NULL,
-			REG_OPTION_NON_VOLATILE, KEY_WRITE | KEY_QUERY_VALUE, NULL, &default_key, NULL);
-		if (status != ERROR_SUCCESS) {
-			printf("Creating key failed: %d %d.\n", status, GetLastError());
-		}
-		status = RegSetValueExA(default_key, "openpath", 0, REG_EXPAND_SZ, (LPCBYTE)currentpath, MAX_PATH);
-		if (status != ERROR_SUCCESS) {
-			printf("Setting key value failed: %d %d.\n", status, GetLastError());
-		}
-		status = RegSetValueExA(default_key, "savepath", 0, REG_EXPAND_SZ, (LPCBYTE)currentpath, MAX_PATH);
-		if (status != ERROR_SUCCESS) {
-			printf("Setting key value failed: %d %d.\n", status, GetLastError());
-		}
-		RegCloseKey(default_key);
-	}
-	RegCloseKey(testkey);
-
-	HKEY subKey = nullptr;
-	LSTATUS status = RegOpenKeyExA(HKEY_CURRENT_USER, "SOFTWARE\\BinReaderGUI", 0, KEY_SET_VALUE, &subKey);
-	if (status != ERROR_SUCCESS)
-	{
-		printf("Opening key failed: %d %d.\n", status, GetLastError());
-	}
-
-	char* tmp = (char*)callocb(1, 64);
-	char* buf = (char*)callocb(1, 32);
-	char* opencopy = (char*)callocb(1, MAX_PATH);
-	char* openfile = (char*)callocb(1, MAX_PATH);
-	char* savefile = (char*)callocb(1, MAX_PATH);
-	char* openpath = (char*)callocb(1, MAX_PATH);
-	char* savepath = (char*)callocb(1, MAX_PATH);
+	char packetStrVersion[32] = { '\0' };
+	char windowTitle[64] = { '\0' };
+	mi_string stringBuf(2, '\0');
 	
 	bool rainbow = false;
-	bool openchoose = false;
-	bool opentree = false;
+	bool openTree = false;
+	bool openChoose = false;
 
-	uintptr_t treeid = 0;
-	PacketBin* packet = NULL;
+	int treeId = 0;
+	PacketBin packet;
 
 #define TESTBIN
 #if defined TESTBIN && defined _DEBUG
-	const char* test = "C:\\Users\\autergame\\Documents\\Visual Studio 2019\\Projects\\BinReader\\Release\\test.bin";
-	packet = DecodeBin(_strdup(test), hasht);
-	if (packet != NULL)
+	const char* teststr = "C:\\Users\\autergame\\Documents\\Visual Studio 2019\\Projects\\BinReader\\BinReader\\DebugWR\\test.bin";
+	if (packet.DecodeBin((char*)teststr, hashT, ternaryT))
 	{
-		treeid = 3;
-		memcpy(opencopy, test, strlen(test));
-		myassert(sprintf_s(buf, 32, "%" PRIu32, packet->Version) <= 0);
-		if (packet->Version >= 2)
+		treeId = 2;
+		myassert(memcpy(openFile, teststr, strlen(teststr)) != openFile)
+		myassert(sprintf_s(packetStrVersion, 32, "%" PRIu32, packet.m_Version) <= 0)
+		if (packet.m_Version >= 2)
 		{
-			for (uint32_t i = 0; i < packet->linkedsize; i++)
+			for (uint32_t i = 0; i < packet.m_linkedList.size(); i++)
 			{
-				packet->LinkedList[i]->id = treeid;
-				treeid += 1;
+				packet.m_linkedList[i].first = treeId;
+				treeId += 2;
 			}
 		}
-		GetStructIdBin(packet->entriesMap, &treeid);
+		ContructIdForBinField(packet.m_entriesBin, treeId);
+		ContructIdForBinField(packet.m_patchesBin, treeId);
 	}
 #endif 
 
 	glClearColor(0.f, 0.f, 0.f, 1.f);
-	HWND windowa = glfwGetWin32Window(window);
-	while (!glfwWindowShouldClose(window))
+	HWND glfwWindowNative = glfwGetWin32Window(glfwWindow);
+	while (!glfwWindowShouldClose(glfwWindow))
 	{
 		#ifdef TRACY_ENABLE_ZONES
 			FrameMark;
 		#endif 	
 
 		glfwPollEvents();
-		if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-			glfwSetWindowShouldClose(window, true);
+		if (glfwGetKey(glfwWindow, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+			glfwSetWindowShouldClose(glfwWindow, true);
 
-		glfwGetFramebufferSize(window, &width, &height);
-		glViewport(0, 0, width, height);
+		glfwGetFramebufferSize(glfwWindow, &windowWidth, &windowHeight);
+		glViewport(0, 0, windowWidth, windowHeight);
 		glClear(GL_COLOR_BUFFER_BIT);
 
-		myassert(sprintf_s(tmp, 64, "BinReaderGUI - FPS: %1.0f", GImGui->IO.Framerate) <= 0);
-		glfwSetWindowTitle(window, tmp);
+		myassert(sprintf_s(windowTitle, 64,
+			"BinReaderGUI - Fps: %1.0f / Ms: %.3f", GImGui->IO.Framerate, 1000.0f / GImGui->IO.Framerate) <= 0)
+		glfwSetWindowTitle(glfwWindow, windowTitle);
 
 		if (GImGui->IO.Framerate < 45.f)
 			GImGui->Style.FrameRounding = 0.f;
@@ -188,317 +275,487 @@ int main()
 		ImGui::NewFrame();
 
 		ImGui::SetNextWindowPos(ImVec2(0, 0));
-		ImGui::SetNextWindowSize(ImVec2((float)width, (float)height));
-		ImGui::Begin("Main", 0, FULL_SCREEN_FLAGS);
-		if (ImGui::BeginMenuBar())
+		ImGui::SetNextWindowSize(ImVec2((float)windowWidth, (float)windowHeight));
+		if (ImGui::Begin("Main", 0, FULL_SCREEN_FLAGS))
 		{
-			if (ImGui::MenuItem("Open Bin"))
+			ImGuiWindow& imguiWindow = *ImGui::GetCurrentWindow();
+			if (ImGui::BeginMenuBar())
 			{
-				DWORD size = 260;
-				OPENFILENAMEA ofn;
-				memset(&ofn, 0, sizeof(ofn));
-				memset(openfile, 0, MAX_PATH);
-				memset(openpath, 0, MAX_PATH);
-				LSTATUS status = RegGetValueA(HKEY_CURRENT_USER, "SOFTWARE\\BinReaderGUI", "openpath",
-					RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND, NULL, openpath, &size);
-				if (status != ERROR_SUCCESS) {
-					printf("Getting key value failed: %d %d.\n", status, GetLastError());
-				}
-				ofn.lStructSize = sizeof(ofn);
-				ofn.hwndOwner = windowa;
-				ofn.lpstrFile = openfile;
-				ofn.nMaxFile = MAX_PATH;
-				ofn.lpstrFilter = "*.bin\0";
-				ofn.nFilterIndex = 1;
-				ofn.lpstrFileTitle = NULL;
-				ofn.nMaxFileTitle = 0;
-				ofn.lpstrInitialDir = openpath;
-				ofn.lpstrTitle = "Open Bin File";
-				ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
-				if (GetOpenFileNameA(&ofn) == TRUE)
-				{
-					memset(openpath, 0, MAX_PATH);
-					memset(opencopy, 0, MAX_PATH);
-					memcpy(openpath, openfile, strlen(openfile));
-					memcpy(opencopy, openfile, strlen(openfile));
-					strip_filepath(openpath);
-					status = RegSetValueExA(subKey, "openpath", 0, REG_EXPAND_SZ, (LPCBYTE)openpath, (DWORD)strlen(openpath));
-					if (status != ERROR_SUCCESS) {
-						printf("Setting key value failed: %d %d.\n", status, GetLastError());
-					}
-					if (packet != NULL)
-						ClearBin(packet->entriesMap);
-					packet = DecodeBin(openfile, hasht);
-					if (packet != NULL)
-					{
-						treeid = 3;
-						ImGui::GetStateStorage()->Clear();
-						myassert(sprintf_s(buf, 32, "%" PRIu32, packet->Version) <= 0);
-						if (packet->Version >= 2)
-						{
-							for (uint32_t i = 0; i < packet->linkedsize; i++)
-							{
-								packet->LinkedList[i]->id = treeid;
-								treeid += 1;
-							}
-						}
-						GetStructIdBin(packet->entriesMap, &treeid);
-					}
-				}
-			}
-			if (opencopy[0] != '\0' && packet != NULL)
-			{
-				if (ImGui::MenuItem("Save Bin"))
-				{
-					DWORD size = 260;
+				if (ImGui::MenuItem("Open Bin"))
+				{				
 					OPENFILENAMEA ofn;
-					memset(&ofn, 0, sizeof(ofn));
-					memset(savefile, 0, MAX_PATH);
-					memset(savepath, 0, MAX_PATH);
-					LSTATUS status = RegGetValueA(HKEY_CURRENT_USER, "SOFTWARE\\BinReaderGUI", "savepath",
-						RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND, NULL, savepath, &size);
-					if (status != ERROR_SUCCESS) {
-						printf("Getting key value failed: %d %d.\n", status, GetLastError());
-					}
+					myassert(memset(&ofn, 0, sizeof(ofn)) != &ofn)
+					myassert(memset(openFile, 0, MAX_PATH) != openFile)
+					myassert(memset(openPath, 0, MAX_PATH) != openPath)
+
+					pathSize = MAX_PATH;
+					regStatus = RegGetValueA(HKEY_CURRENT_USER, "SOFTWARE\\BinReaderGUI", "openpath",
+						RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND, nullptr, openPath, &pathSize);
+					if (regStatus != ERROR_SUCCESS)
+						printf("Getting key value failed: %d %d\n", regStatus, GetLastError());
+
 					ofn.lStructSize = sizeof(ofn);
-					ofn.hwndOwner = windowa;
-					ofn.lpstrFile = savefile;
+					ofn.hwndOwner = glfwWindowNative;
+					ofn.lpstrFile = openFile;
 					ofn.nMaxFile = MAX_PATH;
-					ofn.lpstrFilter = "*.bin\0";
+					ofn.lpstrFilter = "*.bin";
 					ofn.nFilterIndex = 1;
-					ofn.lpstrFileTitle = NULL;
+					ofn.lpstrFileTitle = nullptr;
 					ofn.nMaxFileTitle = 0;
-					ofn.lpstrDefExt = "bin";
-					ofn.lpstrInitialDir = savepath;
-					ofn.lpstrTitle = "Save Bin File";
-					ofn.Flags = OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
-					if (GetSaveFileNameA(&ofn) == TRUE)
+					ofn.lpstrInitialDir = openPath;
+					ofn.lpstrTitle = "Open Bin File";
+					ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+
+					if (GetOpenFileNameA(&ofn) == TRUE)
 					{
-						memset(savepath, 0, MAX_PATH);
-						memcpy(savepath, savefile, strlen(savefile));
-						strip_filepath(savepath);
-						status = RegSetValueExA(subKey, "savepath", 0, REG_EXPAND_SZ, (LPCBYTE)savepath, (DWORD)strlen(savepath));
-						if (status != ERROR_SUCCESS) {
-							printf("Setting key value failed: %d %d.\n", status, GetLastError());
+						if (openFile[0] != '\0')
+						{
+							size_t openFileLen = strlen(openFile);
+							myassert(memset(openPath, 0, MAX_PATH) != openPath)
+							myassert(memcpy(openPath, openFile, openFileLen) != openPath)
+							strip_filepath(openPath);
+
+							regStatus = RegSetValueExA(regkeyresult, "openpath", 0, REG_EXPAND_SZ,
+								(LPCBYTE)openPath, (DWORD)openFileLen);
+							if (regStatus != ERROR_SUCCESS)
+								printf("Setting key value failed: %d %d\n", regStatus, GetLastError());
+
+							PacketBin packetNew; 
+							if (packetNew.DecodeBin(openFile, hashT, ternaryT))
+							{
+								if (packet.m_entriesBin)
+									ClearBinField(packet.m_entriesBin);
+								if (packet.m_patchesBin)
+									ClearBinField(packet.m_patchesBin);
+
+								treeId = 2;
+								packet = packetNew;
+								ImGui::GetStateStorage()->Clear();
+								myassert(sprintf_s(packetStrVersion, 32, "%" PRIu32, packet.m_Version) <= 0)
+								if (packet.m_Version >= 2)
+								{
+									for (uint32_t i = 0; i < packet.m_linkedList.size(); i++)
+									{
+										packet.m_linkedList[i].first = treeId;
+										treeId += 2;
+									}
+								}
+
+								ContructIdForBinField(packet.m_entriesBin, treeId);
+								ContructIdForBinField(packet.m_patchesBin, treeId);
+							}
 						}
-						EncodeBin(savefile, packet);
 					}
 				}
-				if (packet != NULL)
+				if (packet.m_entriesBin)
 				{
-					ImGui::SameLine();
-					ImGui::AlignTextToFramePadding();
-					if (ImGui::Checkbox("Open/Close All Tree Nodes", &openchoose))
+					if (ImGui::MenuItem("Save Bin"))
 					{
-						if (openchoose)
-							opentree = true;
+						OPENFILENAMEA ofn;
+						myassert(memset(&ofn, 0, sizeof(ofn)) != &ofn)
+						myassert(memset(saveFile, 0, MAX_PATH) != saveFile)
+						myassert(memset(savePath, 0, MAX_PATH) != savePath)
+
+						pathSize = MAX_PATH;
+						regStatus = RegGetValueA(HKEY_CURRENT_USER, "SOFTWARE\\BinReaderGUI", "savepath",
+							RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND, nullptr, savePath, &pathSize);
+						if (regStatus != ERROR_SUCCESS)
+							printf("Getting key value failed: %d %d\n", regStatus, GetLastError());
+
+						ofn.lStructSize = sizeof(ofn);
+						ofn.hwndOwner = glfwWindowNative;
+						ofn.lpstrFile = saveFile;
+						ofn.nMaxFile = MAX_PATH;
+						ofn.lpstrFilter = "*.bin";
+						ofn.nFilterIndex = 1;
+						ofn.lpstrFileTitle = nullptr;
+						ofn.nMaxFileTitle = 0;
+						ofn.lpstrDefExt = "bin";
+						ofn.lpstrInitialDir = savePath;
+						ofn.lpstrTitle = "Save Bin File";
+						ofn.Flags = OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+
+						if (GetSaveFileNameA(&ofn) == TRUE)
+						{
+							if (openFile[0] != '\0')
+							{
+								size_t saveFileLen = strlen(saveFile);
+								myassert(memset(savePath, 0, MAX_PATH) != savePath)
+								myassert(memcpy(savePath, saveFile, saveFileLen) != savePath)
+								strip_filepath(savePath);
+
+								regStatus = RegSetValueExA(regkeyresult, "savepath", 0, REG_EXPAND_SZ,
+									(LPCBYTE)savePath, (DWORD)saveFileLen);
+								if (regStatus != ERROR_SUCCESS)
+									printf("Setting key value failed: %d %d\n", regStatus, GetLastError());
+
+								packet.EncodeBin(saveFile);
+							}
+						}
+					}
+					ImGui::SameLine();
+					if (ImGui::Checkbox("Open/Close All Tree Nodes", &openChoose))
+					{
+						if (openChoose)
+							openTree = true;
 						else
-							SetTreeCloseState(packet->entriesMap, ImGui::GetCurrentWindow());
+							SetTreeCloseState(packet.m_entriesBin, imguiWindow);
+					}
+					ImGui::SameLine();
+					ImGui::Checkbox("RainBow Mode", &rainbow);
+					ImGui::SameLine();
+					if (ImGui::Checkbox("Enable Vsync", (bool*)&vSync))
+					{
+						regStatus = RegSetValueExA(regkeyresult, "vsync", 0, REG_DWORD, (LPCBYTE)&vSync, 4);
+						if (regStatus != ERROR_SUCCESS)
+							printf("Setting key value failed: %d %d\n", regStatus, GetLastError());
+						glfwSwapInterval(vSync);
 					}
 				}
-				if (packet != NULL)
+				ImGui::EndMenuBar();
+			}
+			if (packet.m_entriesBin)
+			{
+				ImGui::SetNextItemOpen(true);
+				if (ImGui::TreeNodeEx("#filetree", ImGuiTreeNodeFlags_Framed |
+					ImGuiTreeNodeFlags_SpanFullWidth, openFile))
 				{
-					ImGui::SameLine();
-					ImGui::AlignTextToFramePadding();
-					ImGui::Checkbox("RainBow Mode", &rainbow);
+					uint32_t treesize = 0;
+					GetTotalBinFieldSize(packet.m_entriesBin, treesize);
+
+					ImDrawList* drawList = imguiWindow.DrawList;
+					ImDrawListSplitter splitter;
+					splitter.Split(drawList, 2);
+					splitter.SetCurrentChannel(drawList, 1);
+					
+					ImGui::Indent();
+					{
+						ImGui::AlignTextToFramePadding();
+						ImGui::Text("Tree Size = %d", treesize);
+						ImGui::AlignTextToFramePadding();
+						ImGui::Text("Version ="); ImGui::SameLine();
+						char* psvString = InputText(packetStrVersion, 1);
+						if (psvString)
+						{
+							myassert(sscanf_s(psvString, "%" PRIu32, &packet.m_Version) <= 0)
+							myassert(sprintf_s(packetStrVersion, 32, "%" PRIu32, packet.m_Version) <= 0)
+							delete[] psvString;
+						}
+						ImGui::AlignTextToFramePadding();
+						ImGui::Text("Is Patch ="); ImGui::SameLine();
+						char* ipString = InputText(packet.m_isPatch ? truestr : falsestr, 2);
+						if (ipString)
+						{
+							for (int i = 0; ipString[i]; i++)
+								ipString[i] = tolower(ipString[i]);
+							if (strcmp(ipString, truestr) == 0)
+								packet.m_isPatch = true;
+							else
+								packet.m_isPatch = false;
+							delete[] ipString;
+						}
+					}
+
+					if (packet.m_Version >= 2)
+					{
+						ImVec2 cursor = imguiWindow.DC.CursorPos;
+						if (ImGui::TreeNodeEx("#linkedlist", ImGuiTreeNodeFlags_Framed, "LinkedList"))
+						{
+							ImGui::Indent();
+							for (uint32_t i = 0; i < packet.m_linkedList.size(); i++)
+							{
+								char* str = InputText(packet.m_linkedList[i].second.data(), packet.m_linkedList[i].first);
+								if (str)
+								{
+									packet.m_linkedList[i].second = mi_string(str);
+								}
+								ImGui::SameLine();
+								if (BinFieldDelete(packet.m_linkedList[i].first + 1))
+									packet.m_linkedList.erase(packet.m_linkedList.begin() + i);
+							}
+							if (ImGui::Button("Add new item"))
+							{
+								treeId += 2;
+								packet.m_linkedList.emplace_back(treeId, mi_string(2, '\0'));
+							}
+							ImGui::Unindent();
+							ImGui::TreePop();
+
+							cursor.x -= 3.f;
+							ImVec2 cursorMax = ImVec2(imguiWindow.WorkRect.Max.x, imguiWindow.DC.CursorMaxPos.y);
+							ImGui::ItemAdd(ImRect(cursor, cursorMax), 0);
+							ImColor col;
+							if (rainbow)
+							{
+								if (ImGui::IsItemHovered())
+									col = IM_COL32(80, 0, 0, 255);
+								else
+									col = IM_COL32(64, 0, 0, 255);
+							}
+							else {
+								if (ImGui::IsItemHovered())
+									col = IM_COL32(32, 32, 32, 255);
+								else
+									col = IM_COL32(24, 24, 24, 255);
+							}
+							splitter.SetCurrentChannel(drawList, 0);
+							drawList->AddRectFilled(cursor, cursorMax, col);
+							drawList->AddRect(cursor, cursorMax,
+								rainbow ? IM_COL32(255, 0, 0, 255) : IM_COL32(128, 128, 128, 255));
+							splitter.SetCurrentChannel(drawList, 1);
+						}
+					}
+
+					ImGui::Separator();
+
+					{
+						Map* entryMap = packet.m_entriesBin->data->map;
+	#ifdef TRACY_ENABLE_ZONES
+						ZoneNamedN(entrymapz, "EntryMap", true);
+	#endif
+						for (uint32_t i = 0; i < entryMap->items.size(); i++)
+						{
+							if (openTree)
+								ImGui::SetNextItemOpen(true);
+							entryMap->items[i].cursorMin = imguiWindow.DC.CursorPos;
+							entryMap->items[i].expanded = MyTreeNodeEx(entryMap->items[i].id);
+							entryMap->items[i].idim = imguiWindow.IDStack.back();
+
+							if (IsItemVisible(imguiWindow))
+							{
+								ImVec2 cursor, cursorOld;
+	#ifdef _DEBUG
+								if (ImGui::IsItemHovered())
+									ImGui::SetTooltip("%d", entryMap->items[i].id);
+	#endif
+								ImGui::SameLine(); InputTextHash(entryMap->items[i].key->data->ui32,
+									entryMap->items[i].key->id, hashT, ternaryT);
+								ImGui::SameLine(); ImGui::Text(":"); ImGui::SameLine();
+
+								DrawBinField(entryMap->items[i].value, hashT, ternaryT, treeId,
+									imguiWindow, openTree, &entryMap->items[i].expanded, &cursor);
+
+								cursorOld = ImGui::GetCursorPos();
+								ImGui::SetCursorPos(cursor);
+								if (BinFieldDelete(entryMap->items[i].id + 1))
+								{
+									ClearBinField(entryMap->items[i].key);
+									ClearBinField(entryMap->items[i].value);
+
+									bool open = entryMap->items[i].expanded;
+									entryMap->items.erase(entryMap->items.begin() + i);
+									if (open)
+										ImGui::TreePop();
+									continue;
+								}
+								ImGui::SetCursorPos(cursorOld);
+							}
+							else {
+								ImGui::SameLine();
+								DrawBinField(entryMap->items[i].value, hashT, ternaryT,
+									treeId, imguiWindow, openTree, &entryMap->items[i].expanded);
+							}
+
+							if (entryMap->items[i].expanded)
+							{
+								ImGui::TreePop();
+								if (entryMap->items[i].value->data->pe->name == 0)
+								{
+									entryMap->items[i].cursorMax.x = 0.f;
+									continue;
+								}
+								entryMap->items[i].cursorMax = ImVec2(imguiWindow.WorkRect.Max.x,
+									imguiWindow.DC.CursorMaxPos.y);
+							}
+							else
+								entryMap->items[i].isOver = false;
+						}
+
+						if (IsItemVisible(imguiWindow))
+						{
+							if (ImGui::Button("Add new entry item"))
+							{
+								MapPair mapItem;
+								mapItem.key = BinFieldNewClean(entryMap->keyType,
+									(BinType)entryMap->current2, (BinType)entryMap->current3);
+								mapItem.value = BinFieldNewClean(entryMap->valueType,
+									(BinType)entryMap->current4, (BinType)entryMap->current5);
+
+								mapItem.key->parent = packet.m_entriesBin;
+								mapItem.value->parent = packet.m_entriesBin;
+
+								entryMap->items.emplace_back(mapItem);
+								ContructIdForBinField(packet.m_entriesBin, treeId);
+							}
+						}
+						else {
+							MyNewLine(imguiWindow);
+						}
+					}
+
+					ImGui::Separator();
+
+					if (packet.m_isPatch && packet.m_Version >= 3)
+					{
+						Map *patchMap = packet.m_patchesBin->data->map;
+#ifdef TRACY_ENABLE_ZONES
+						ZoneNamedN(patchmapz, "PatchMap", true);
+#endif
+						for (uint32_t i = 0; i < patchMap->items.size(); i++)
+						{
+							if (openTree)
+								ImGui::SetNextItemOpen(true);
+							patchMap->items[i].cursorMin = imguiWindow.DC.CursorPos;
+							patchMap->items[i].expanded = MyTreeNodeEx(patchMap->items[i].id);
+							patchMap->items[i].idim = imguiWindow.IDStack.back();
+
+							if (IsItemVisible(imguiWindow))
+							{
+								ImVec2 cursor, cursorOld;
+#ifdef _DEBUG
+								if (ImGui::IsItemHovered())
+									ImGui::SetTooltip("%d", patchMap->items[i].id);
+#endif
+								ImGui::SameLine(); InputTextHash(patchMap->items[i].key->data->ui32,
+									patchMap->items[i].key->id, hashT, ternaryT);
+								ImGui::SameLine(); ImGui::Text(":"); ImGui::SameLine();
+
+								DrawBinField(patchMap->items[i].value, hashT, ternaryT, treeId,
+									imguiWindow, openTree, &patchMap->items[i].expanded, &cursor);
+
+								cursorOld = ImGui::GetCursorPos();
+								ImGui::SetCursorPos(cursor);
+								if (BinFieldDelete(patchMap->items[i].id + 1))
+								{
+									ClearBinField(patchMap->items[i].key);
+									ClearBinField(patchMap->items[i].value);
+
+									bool open = patchMap->items[i].expanded;
+									patchMap->items.erase(patchMap->items.begin() + i);
+									if (open)
+										ImGui::TreePop();
+									continue;
+								}
+								ImGui::SetCursorPos(cursorOld);
+							}
+							else {
+								ImGui::SameLine();
+								DrawBinField(patchMap->items[i].value, hashT, ternaryT,
+									treeId, imguiWindow, openTree, &patchMap->items[i].expanded);
+							}
+
+							if (patchMap->items[i].expanded)
+							{
+								ImGui::TreePop();
+								if (patchMap->items[i].value->data->pe->name == 0)
+								{
+									patchMap->items[i].cursorMax.x = 0.f;
+									continue;
+								}
+								patchMap->items[i].cursorMax = ImVec2(imguiWindow.WorkRect.Max.x,
+									imguiWindow.DC.CursorMaxPos.y);
+							}
+							else
+								patchMap->items[i].isOver = false;
+						}
+
+						if (IsItemVisible(imguiWindow))
+						{
+							if (ImGui::Button("Add new patch item"))
+							{
+								MapPair mapItem;
+								mapItem.key = BinFieldNewClean(patchMap->keyType,
+									(BinType)patchMap->current2, (BinType)patchMap->current3);
+								mapItem.value = BinFieldNewClean(patchMap->valueType,
+									(BinType)patchMap->current4, (BinType)patchMap->current5);
+
+								mapItem.key->parent = packet.m_patchesBin;
+								mapItem.value->parent = packet.m_patchesBin;
+
+								PointerOrEmbed* pe = mapItem.value->data->pe;
+								pe->name = patchFNV;
+
+								char* string = new char[2];
+								string[0] = string[1] = '\0';
+
+								BinField* stringBin = new BinField;
+								stringBin->parent = mapItem.value;
+								stringBin->type = BinType::STRING;
+								stringBin->data->string = string;
+
+								EPField firstField;
+								firstField.key = pathFNV;
+								firstField.value = stringBin;
+
+								pe->items.emplace_back(firstField);
+
+								patchMap->items.emplace_back(mapItem);
+								ContructIdForBinField(packet.m_patchesBin, treeId);
+							}
+						}
+						else {
+							MyNewLine(imguiWindow);
+						}
+					}
+
+					ImGui::Unindent();
+
+					ImGui::TreePop();
+
+					openTree = false;
+					splitter.SetCurrentChannel(drawList, 0);
+					if (rainbow)
+					{
+						DrawRectRainBow(packet.m_entriesBin, imguiWindow, 0);
+						DrawRectRainBow(packet.m_patchesBin, imguiWindow, 0);
+					}
+					else
+					{
+						DrawRectNormal(packet.m_entriesBin, imguiWindow, 0.09f);
+						DrawRectNormal(packet.m_patchesBin, imguiWindow, 0.09f);
+					}
+					splitter.SetCurrentChannel(drawList, 1);
+					splitter.Merge(drawList);
 				}
 			}
-			ImGui::EndMenuBar();
+
+			ImGui::End();
 		}
-		if (opencopy[0] != '\0' && packet != NULL)
-		{
-			ImGui::AlignTextToFramePadding();
-			if (opentree)
-				ImGui::SetNextItemOpen(true);
-			if (ImGui::TreeNodeEx((void*)0, ImGuiTreeNodeFlags_Framed |
-				ImGuiTreeNodeFlags_SpanFullWidth | ImGuiTreeNodeFlags_DefaultOpen, opencopy))
-			{
-				uint32_t treesize = 0;
-				GetTreeSize(packet->entriesMap, &treesize);
-
-				ImGuiWindow* windowi = ImGui::GetCurrentWindow();
-				ImDrawList* drawlist = windowi->DrawList;
-				ImDrawListSplitter splitter;
-				splitter.Split(drawlist, 2);
-				splitter.SetCurrentChannel(drawlist, 1);
-
-				ImGui::AlignTextToFramePadding();
-				ImGui::Indent(); ImGui::Text("Tree Size"); ImGui::SameLine();
-				ImGui::Text("="); ImGui::SameLine(); ImGui::Text("%d", treesize);
-				ImGui::AlignTextToFramePadding();
-				ImGui::Text("Version"); ImGui::SameLine();
-				ImGui::Text("="); ImGui::SameLine();
-				char* string = InputText(buf, 1);
-				if (string != NULL)
-				{
-					myassert(sscanf_s(string, "%" PRIu32, &packet->Version) <= 0);
-					myassert(sprintf_s(buf, 32, "%" PRIu32, packet->Version) <= 0);
-					freeb(string);
-				}
-				if (packet->Version >= 2)
-				{
-					ImVec2 cursor = windowi->DC.CursorPos;
-					ImGui::AlignTextToFramePadding();
-					if (ImGui::TreeNodeEx((void*)2, ImGuiTreeNodeFlags_Framed, "LinkedList"))
-					{
-						ImGui::Indent();
-						for (uint32_t i = 0; i < packet->linkedsize; i++)
-						{
-							char* str = InputText(packet->LinkedList[i]->str, packet->LinkedList[i]->id);
-							if (str != NULL)
-							{
-								freeb(packet->LinkedList[i]->str);
-								packet->LinkedList[i]->str = str;
-							}
-						}
-						if (ImGui::Button("Add new item"))
-						{
-							treeid += 1;
-							packet->linkedsize += 1;
-							packet->LinkedList = (PacketId**)reallocb(packet->LinkedList, packet->linkedsize * sizeof(PacketId*));
-							packet->LinkedList[packet->linkedsize-1] = (PacketId*)callocb(1, sizeof(PacketId));
-							packet->LinkedList[packet->linkedsize-1]->str = (char*)callocb(1, 1);
-							packet->LinkedList[packet->linkedsize-1]->id = treeid;
-						}
-						ImGui::Unindent();
-						ImGui::TreePop();
-
-						cursor.x -= 3.f;
-						ImVec2 cursormax = ImVec2(windowi->WorkRect.Max.x, windowi->DC.CursorMaxPos.y);
-						ImGui::ItemAdd(ImRect(cursor, cursormax), 0);
-						ImColor col;
-						if (rainbow)
-						{ 
-							if (ImGui::IsItemHovered())
-								col = IM_COL32(80, 0, 0, 255);
-							else
-								col = IM_COL32(64, 0, 0, 255);
-						} 
-						else {
-							if (ImGui::IsItemHovered())
-								col = IM_COL32(32, 32, 32, 255);
-							else
-								col = IM_COL32(24, 24, 24, 255);
-						}
-						splitter.SetCurrentChannel(drawlist, 0);
-						drawlist->AddRectFilled(cursor, cursormax, col);
-						drawlist->AddRect(cursor, cursormax, rainbow ? IM_COL32(255, 0, 0, 255) : IM_COL32(128, 128, 128, 255));
-						splitter.SetCurrentChannel(drawlist, 1);
-					}
-				}
-				Map* mp = (Map*)packet->entriesMap->data;
-				#ifdef TRACY_ENABLE_ZONES
-					ZoneNamedN(mpz, "EntryMap", true);
-				#endif
-				for (uint32_t i = 0; i < mp->itemsize; i++)
-				{
-					if (mp->items[i]->key != NULL)
-					{
-						if (opentree)
-							ImGui::SetNextItemOpen(true);
-						mp->items[i]->cursormin = windowi->DC.CursorPos;
-						ImGui::AlignTextToFramePadding();
-						mp->items[i]->expanded = MyTreeNodeEx(mp->items[i]->id);
-						mp->items[i]->idim = windowi->IDStack.back();
-						ImGui::AlignTextToFramePadding();
-						if (IsItemVisible(windowi))
-						{
-							ImVec2 cursor, cursore;
-							#ifdef _DEBUG
-							if (ImGui::IsItemHovered())
-								ImGui::SetTooltip("%d", mp->items[i]->id);
-							#endif
-							ImGui::SameLine();
-							InputTextHash(hasht, (uint32_t*)mp->items[i]->key->data, mp->items[i]->key->id);
-							ImGui::SameLine(); ImGui::Text(":"); ImGui::SameLine();
-							GetValueFromType(mp->items[i]->value, hasht, &treeid, windowi,
-								opentree, &mp->items[i]->expanded, &cursor);
-							cursore = ImGui::GetCursorPos();
-							ImGui::SetCursorPos(cursor);
-							if (BinFieldDelete(mp->items[i]->id+1))
-							{
-								ClearBin(mp->items[i]->key);
-								ClearBin(mp->items[i]->value);
-								mp->items[i]->key = NULL;
-								mp->items[i]->value = NULL;
-							}
-							ImGui::SetCursorPos(cursore);
-						} 
-						else {		
-							ImGui::SameLine();
-							GetValueFromType(mp->items[i]->value, hasht, &treeid, windowi,
-								opentree, &mp->items[i]->expanded);
-						}
-						if (mp->items[i]->expanded)
-						{
-							ImGui::TreePop();
-							if (((PointerOrEmbed*)mp->items[i]->value->data)->name == NULL)
-							{
-								mp->items[i]->cursormax.x = 0.f;
-								continue;
-							}
-							mp->items[i]->cursormax = ImVec2(windowi->WorkRect.Max.x,
-								windowi->DC.CursorMaxPos.y);
-						} 
-						else
-							mp->items[i]->isover = false;
-					}
-				}
-				if (IsItemVisible(windowi))
-				{
-					if (ImGui::Button("Add new item"))
-					{
-						mp->itemsize += 1;
-						mp->items = (Pair**)reallocb(mp->items, mp->itemsize * sizeof(Pair*));
-						mp->items[mp->itemsize - 1] = (Pair*)callocb(1, sizeof(Pair));
-						mp->items[mp->itemsize - 1]->key = BinFieldClean(mp->keyType, (Type)mp->current2, (Type)mp->current3);
-						mp->items[mp->itemsize - 1]->value = BinFieldClean(mp->valueType, (Type)mp->current4, (Type)mp->current5);
-						GetStructIdBin(packet->entriesMap, &treeid);
-					}
-				} 
-				else {
-					NewLine(windowi);
-				}
-				ImGui::Unindent();
-				ImGui::TreePop();
-				if (opentree)
-					opentree = false;
-				splitter.SetCurrentChannel(drawlist, 0);
-				if (rainbow)
-					DrawRectRainBow(packet->entriesMap, windowi, 0);
-				else 
-					DrawRectNormal(packet->entriesMap, windowi, 0.09f);
-				splitter.SetCurrentChannel(drawlist, 1);
-				splitter.Merge(drawlist);
-			}		
-		}
-		ImGui::End();
 
 		#ifdef _DEBUG
+			ImGui::SetNextWindowPos(ImVec2(windowWidth / 1.75f, 50), ImGuiCond_Once);
+			ImGui::SetNextWindowCollapsed(true, ImGuiCond_Once);
 			ImGui::ShowMetricsWindow();
-			ImGui::Begin("Dear ImGui Style Editor", NULL, ImGuiWindowFlags_AlwaysAutoResize);
+
+			ImGui::SetNextWindowPos(ImVec2(windowWidth / 1.75f, 73), ImGuiCond_Once);
+			ImGui::SetNextWindowCollapsed(true, ImGuiCond_Once);
+			ImGui::Begin("Dear ImGui Style Editor", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
 			ImGui::ShowStyleEditor();
 			ImGui::End();
-			ImGui::SetWindowCollapsed("Dear ImGui Style Editor", true, ImGuiCond_Once);
-			ImGui::SetWindowCollapsed("Dear ImGui Metrics/Debugger", true, ImGuiCond_Once);
-			ImGui::SetWindowPos("Dear ImGui Style Editor", ImVec2(width/1.75f, 73), ImGuiCond_Once);
-			ImGui::SetWindowPos("Dear ImGui Metrics/Debugger", ImVec2(width/1.75f, 50), ImGuiCond_Once);
+
+			ImGui::SetNextWindowCollapsed(true, ImGuiCond_Once);
+			ImGui::ShowDemoWindow();
 		#endif
 
 		ImGui::Render();
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-		glfwSwapBuffers(window);
+		glfwSwapBuffers(glfwWindow);
 	}
 
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
 
-	glfwDestroyWindow(window);
+	glfwDestroyWindow(glfwWindow);
 	glfwTerminate();
 
-	if (packet != NULL)
-		ClearBin(packet->entriesMap);
+	if (packet.m_entriesBin)
+		ClearBinField(packet.m_entriesBin);
+
+	if (packet.m_patchesBin)
+		ClearBinField(packet.m_patchesBin);
+
+	RegCloseKey(regkeyresult);
 
 	return 0;
 }

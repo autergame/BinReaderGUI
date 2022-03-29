@@ -60,35 +60,28 @@ size_t     _mi_os_page_size(void);
 void       _mi_os_init(void);                                      // called from process init
 void*      _mi_os_alloc(size_t size, mi_stats_t* stats);           // to allocate thread local data
 void       _mi_os_free(void* p, size_t size, mi_stats_t* stats);   // to free thread local data
-
-bool       _mi_os_protect(void* addr, size_t size);
-bool       _mi_os_unprotect(void* addr, size_t size);
-bool       _mi_os_commit(void* addr, size_t size, bool* is_zero, mi_stats_t* stats);
-bool       _mi_os_decommit(void* p, size_t size, mi_stats_t* stats);
-bool       _mi_os_reset(void* p, size_t size, mi_stats_t* stats);
-bool       _mi_os_unreset(void* p, size_t size, bool* is_zero, mi_stats_t* stats);
 size_t     _mi_os_good_alloc_size(size_t size);
 
-// arena.c
-void*      _mi_arena_alloc_aligned(size_t size, size_t alignment, bool* commit, bool* large, bool* is_pinned, bool* is_zero, size_t* memid, mi_os_tld_t* tld);
-void*      _mi_arena_alloc(size_t size, bool* commit, bool* large, bool* is_pinned, bool* is_zero, size_t* memid, mi_os_tld_t* tld);
-void       _mi_arena_free(void* p, size_t size, size_t memid, bool is_committed, mi_os_tld_t* tld);
+// memory.c
+void*      _mi_mem_alloc_aligned(size_t size, size_t alignment, bool* commit, bool* large, bool* is_pinned, bool* is_zero, size_t* id, mi_os_tld_t* tld);
+void       _mi_mem_free(void* p, size_t size, size_t id, bool fully_committed, bool any_reset, mi_os_tld_t* tld);
 
-// "segment-cache.c"
-void*      _mi_segment_cache_pop(size_t size, mi_commit_mask_t* commit_mask, bool* large, bool* is_pinned, bool* is_zero, size_t* memid, mi_os_tld_t* tld);
-bool       _mi_segment_cache_push(void* start, size_t size, size_t memid, mi_commit_mask_t commit_mask, bool is_large, bool is_pinned, mi_os_tld_t* tld);
-void       _mi_segment_map_allocated_at(const mi_segment_t* segment);
-void       _mi_segment_map_freed_at(const mi_segment_t* segment);
+bool       _mi_mem_reset(void* p, size_t size, mi_os_tld_t* tld);
+bool       _mi_mem_unreset(void* p, size_t size, bool* is_zero, mi_os_tld_t* tld);
+bool       _mi_mem_commit(void* p, size_t size, bool* is_zero, mi_os_tld_t* tld);
+bool       _mi_mem_protect(void* addr, size_t size);
+bool       _mi_mem_unprotect(void* addr, size_t size);
+
+void        _mi_mem_collect(mi_os_tld_t* tld);
 
 // "segment.c"
 mi_page_t* _mi_segment_page_alloc(mi_heap_t* heap, size_t block_wsize, mi_segments_tld_t* tld, mi_os_tld_t* os_tld);
 void       _mi_segment_page_free(mi_page_t* page, bool force, mi_segments_tld_t* tld);
 void       _mi_segment_page_abandon(mi_page_t* page, mi_segments_tld_t* tld);
-bool       _mi_segment_try_reclaim_abandoned( mi_heap_t* heap, bool try_all, mi_segments_tld_t* tld);
-void       _mi_segment_thread_collect(mi_segments_tld_t* tld);
+uint8_t*   _mi_segment_page_start(const mi_segment_t* segment, const mi_page_t* page, size_t block_size, size_t* page_size, size_t* pre_size); // page start for any page
 void       _mi_segment_huge_page_free(mi_segment_t* segment, mi_page_t* page, mi_block_t* block);
 
-uint8_t*   _mi_segment_page_start(const mi_segment_t* segment, const mi_page_t* page, size_t* page_size); // page start for any page
+void       _mi_segment_thread_collect(mi_segments_tld_t* tld);
 void       _mi_abandoned_reclaim_all(mi_heap_t* heap, mi_segments_tld_t* tld);
 void       _mi_abandoned_await_readers(void);
 
@@ -216,18 +209,6 @@ static inline uintptr_t _mi_align_up(uintptr_t sz, size_t alignment) {
   }
 }
 
-// Align downwards
-static inline uintptr_t _mi_align_down(uintptr_t sz, size_t alignment) {
-  mi_assert_internal(alignment != 0);
-  uintptr_t mask = alignment - 1;
-  if ((alignment & mask) == 0) { // power of two?
-    return (sz & ~mask);
-  }
-  else {
-    return ((sz / alignment) * alignment);
-  }
-}
-
 // Divide upwards: `s <= _mi_divide_up(s,d)*d < s+d`.
 static inline uintptr_t _mi_divide_up(uintptr_t size, size_t divider) {
   mi_assert_internal(divider != 0);
@@ -241,7 +222,6 @@ static inline bool mi_mem_is_zero(void* p, size_t size) {
   }
   return true;
 }
-
 
 // Align a byte size to a size in _machine words_,
 // i.e. byte size == `wsize*sizeof(void*)`.
@@ -411,47 +391,35 @@ static inline mi_segment_t* _mi_ptr_segment(const void* p) {
   return (mi_segment_t*)((uintptr_t)p & ~MI_SEGMENT_MASK);
 }
 
-static inline mi_page_t* mi_slice_to_page(mi_slice_t* s) {
-  mi_assert_internal(s->slice_offset== 0 && s->slice_count > 0);
-  return (mi_page_t*)(s);
-}
-
-static inline mi_slice_t* mi_page_to_slice(mi_page_t* p) {
-  mi_assert_internal(p->slice_offset== 0 && p->slice_count > 0);
-  return (mi_slice_t*)(p);
-}
-
 // Segment belonging to a page
 static inline mi_segment_t* _mi_page_segment(const mi_page_t* page) {
-  mi_segment_t* segment = _mi_ptr_segment(page); 
-  mi_assert_internal(segment == NULL || ((mi_slice_t*)page >= segment->slices && (mi_slice_t*)page < segment->slices + segment->slice_entries));
+  mi_segment_t* segment = _mi_ptr_segment(page);
+  mi_assert_internal(segment == NULL || page == &segment->pages[page->segment_idx]);
   return segment;
 }
 
-static inline mi_slice_t* mi_slice_first(const mi_slice_t* slice) {
-  mi_slice_t* start = (mi_slice_t*)((uint8_t*)slice - slice->slice_offset);
-  mi_assert_internal(start >= _mi_ptr_segment(slice)->slices);
-  mi_assert_internal(start->slice_offset == 0);
-  mi_assert_internal(start + start->slice_count > slice);
-  return start;
+// used internally
+static inline uintptr_t _mi_segment_page_idx_of(const mi_segment_t* segment, const void* p) {
+  // if (segment->page_size > MI_SEGMENT_SIZE) return &segment->pages[0];  // huge pages
+  ptrdiff_t diff = (uint8_t*)p - (uint8_t*)segment;
+  mi_assert_internal(diff >= 0 && (size_t)diff < MI_SEGMENT_SIZE);
+  uintptr_t idx = (uintptr_t)diff >> segment->page_shift;
+  mi_assert_internal(idx < segment->capacity);
+  mi_assert_internal(segment->page_kind <= MI_PAGE_MEDIUM || idx == 0);
+  return idx;
 }
 
 // Get the page containing the pointer
 static inline mi_page_t* _mi_segment_page_of(const mi_segment_t* segment, const void* p) {
-  ptrdiff_t diff = (uint8_t*)p - (uint8_t*)segment;
-  mi_assert_internal(diff >= 0 && diff < (ptrdiff_t)MI_SEGMENT_SIZE);
-  uintptr_t idx = (uintptr_t)diff >> MI_SEGMENT_SLICE_SHIFT;
-  mi_assert_internal(idx < segment->slice_entries);
-  mi_slice_t* slice0 = (mi_slice_t*)&segment->slices[idx];
-  mi_slice_t* slice = mi_slice_first(slice0);  // adjust to the block that holds the page data
-  mi_assert_internal(slice->slice_offset == 0);
-  mi_assert_internal(slice >= segment->slices && slice < segment->slices + segment->slice_entries);
-  return mi_slice_to_page(slice);
+  uintptr_t idx = _mi_segment_page_idx_of(segment, p);
+  return &((mi_segment_t*)segment)->pages[idx];
 }
 
 // Quick page start for initialized pages
 static inline uint8_t* _mi_page_start(const mi_segment_t* segment, const mi_page_t* page, size_t* page_size) {
-  return _mi_segment_page_start(segment, page, page_size);
+  const size_t bsize = page->xblock_size;
+  mi_assert_internal(bsize > 0 && (bsize%sizeof(void*)) == 0);
+  return _mi_segment_page_start(segment, page, bsize, page_size, NULL);
 }
 
 // Get the page containing the pointer
@@ -468,7 +436,7 @@ static inline size_t mi_page_block_size(const mi_page_t* page) {
   }
   else {
     size_t psize;
-    _mi_segment_page_start(_mi_page_segment(page), page, &psize);
+    _mi_segment_page_start(_mi_page_segment(page), page, bsize, &psize, NULL);
     return psize;
   }
 }
@@ -479,10 +447,6 @@ static inline size_t mi_page_usable_block_size(const mi_page_t* page) {
   return mi_page_block_size(page) - MI_PADDING_SIZE;
 }
 
-// size of a segment
-static inline size_t mi_segment_size(mi_segment_t* segment) {
-  return segment->segment_slices * MI_SEGMENT_SLICE_SIZE;
-}
 
 // Thread free access
 static inline mi_block_t* mi_page_thread_free(const mi_page_t* page) {
@@ -602,13 +566,12 @@ static inline bool mi_is_in_same_segment(const void* p, const void* q) {
 }
 
 static inline bool mi_is_in_same_page(const void* p, const void* q) {
-  mi_segment_t* segment = _mi_ptr_segment(p);
-  if (_mi_ptr_segment(q) != segment) return false;
-  // assume q may be invalid // return (_mi_segment_page_of(segment, p) == _mi_segment_page_of(segment, q));
-  mi_page_t* page = _mi_segment_page_of(segment, p);
-  size_t psize;
-  uint8_t* start = _mi_segment_page_start(segment, page, &psize);
-  return (start <= (uint8_t*)q && (uint8_t*)q < start + psize);
+  mi_segment_t* segmentp = _mi_ptr_segment(p);
+  mi_segment_t* segmentq = _mi_ptr_segment(q);
+  if (segmentp != segmentq) return false;
+  uintptr_t idxp = _mi_segment_page_idx_of(segmentp, p);
+  uintptr_t idxq = _mi_segment_page_idx_of(segmentq, q);
+  return (idxp == idxq);
 }
 
 static inline uintptr_t mi_rotl(uintptr_t x, uintptr_t shift) {
@@ -672,101 +635,6 @@ static inline void mi_block_set_next(const mi_page_t* page, mi_block_t* block, c
   mi_block_set_nextx(page,block,next,NULL);
   #endif
 }
-
-
-// -------------------------------------------------------------------
-// commit mask
-// -------------------------------------------------------------------
-
-#define MI_COMMIT_MASK_BITS  (sizeof(mi_commit_mask_t)*8)
-
-static inline mi_commit_mask_t mi_commit_mask_empty(void) {
-  return 0;
-}
-
-static inline mi_commit_mask_t mi_commit_mask_full(void) {
-  return ~mi_commit_mask_empty();
-}
-
-static inline mi_commit_mask_t mi_commit_mask_create(uintptr_t bitidx, uintptr_t bitcount) {
-  mi_assert_internal(bitidx < MI_COMMIT_MASK_BITS);
-  mi_assert_internal((bitidx + bitcount) <= MI_COMMIT_MASK_BITS);
-  if (bitcount == MI_COMMIT_MASK_BITS) {
-    mi_assert_internal(bitidx==0);
-    return mi_commit_mask_full();
-  }
-  else if (bitcount == 0) {
-    return mi_commit_mask_empty();
-  }
-  else {
-    return (((uintptr_t)1 << bitcount) - 1) << bitidx;
-  }
-}
-
-static inline bool mi_commit_mask_is_empty(mi_commit_mask_t mask) {
-  return (mask == 0);
-}
-
-static inline bool mi_commit_mask_is_full(mi_commit_mask_t mask) {
-  return ((~mask) == 0);
-}
-
-static inline bool mi_commit_mask_all_set(mi_commit_mask_t commit, mi_commit_mask_t mask) {
-  return ((commit & mask) == mask);
-}
-
-static inline bool mi_commit_mask_any_set(mi_commit_mask_t commit, mi_commit_mask_t mask) {
-  return ((commit & mask) != 0);
-}
-
-mi_decl_nodiscard static inline mi_commit_mask_t mi_commit_mask_intersect(mi_commit_mask_t commit, mi_commit_mask_t mask) {
-  return (commit & mask);
-}
-
-static inline void mi_commit_mask_clear(mi_commit_mask_t* commit, mi_commit_mask_t mask) {
-  *commit = (*commit) & (~mask);
-}
-
-static inline void mi_commit_mask_set(mi_commit_mask_t* commit, mi_commit_mask_t mask) {
-  *commit = (*commit) | mask;
-}
-
-static inline size_t mi_commit_mask_committed_size(mi_commit_mask_t mask, size_t total) {
-  if (mi_commit_mask_is_full(mask)) {
-    return total;
-  }
-  else if (mi_commit_mask_is_empty(mask)) {
-    return 0;
-  }
-  else {
-    size_t count = 0;
-    for (; mask != 0; mask >>= 1) {  // todo: use popcount
-      if ((mask&1)!=0) count++;
-    }
-    return (total/MI_COMMIT_MASK_BITS)*count;
-  }
-}
-
-
-#define mi_commit_mask_foreach(mask,idx,count) \
-  idx = 0; \
-  while (mask != 0) {     \
-    /* count ones */      \
-    count = 0;            \
-    while ((mask&1)==1) { \
-      mask >>= 1;         \
-      count++;            \
-    }                     \
-    /* if found, do action */ \
-    if (count > 0) {
-
-#define mi_commit_mask_foreach_end() \
-    } \
-    idx += count; \
-    /* shift out the zero */ \
-    mask >>= 1;   \
-    idx++;        \
-  }
 
 // -------------------------------------------------------------------
 // Fast "random" shuffle

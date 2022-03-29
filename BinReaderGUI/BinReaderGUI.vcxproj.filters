@@ -13,41 +13,77 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Source Files\otherlibs">
+      <UniqueIdentifier>{aaa10099-6207-4c49-923a-b161018cc67f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\otherlibs\ImGui">
+      <UniqueIdentifier>{35d2aced-91d3-404d-b299-edead6af7123}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="libs\imgui\imgui.cpp">
-      <Filter>Source Files</Filter>
+      <Filter>Source Files\otherlibs\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="libs\imgui\imgui_demo.cpp">
+      <Filter>Source Files\otherlibs\ImGui</Filter>
     </ClCompile>
     <ClCompile Include="libs\imgui\imgui_draw.cpp">
-      <Filter>Source Files</Filter>
+      <Filter>Source Files\otherlibs\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="libs\imgui\imgui_impl_glfw.cpp">
+      <Filter>Source Files\otherlibs\ImGui</Filter>
     </ClCompile>
     <ClCompile Include="libs\imgui\imgui_impl_opengl3.cpp">
-      <Filter>Source Files</Filter>
+      <Filter>Source Files\otherlibs\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="libs\imgui\imgui_tables.cpp">
+      <Filter>Source Files\otherlibs\ImGui</Filter>
     </ClCompile>
     <ClCompile Include="libs\imgui\imgui_widgets.cpp">
+      <Filter>Source Files\otherlibs\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="Hashtable.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Myassert.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MemoryWrapper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="BinReader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="glad.c">
-      <Filter>Source Files</Filter>
+      <Filter>Source Files\otherlibs</Filter>
     </ClCompile>
-    <ClCompile Include="libs\imgui\imgui_tables.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="libs\imgui\imgui_demo.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="libs\imgui\imgui_impl_glfw.cpp">
+    <ClCompile Include="TernaryTree.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="TracyClient.cpp">
-      <Filter>Source Files</Filter>
+      <Filter>Source Files\otherlibs</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="BinReaderLib.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Hashtable.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Myassert.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="TernaryTree.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="BinReader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MemoryWrapper.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -8,7 +8,7 @@ terms of the MIT license. A copy of the license can be found in the file
 #ifndef MIMALLOC_H
 #define MIMALLOC_H
 
-#define MI_MALLOC_VERSION 201   // major + 2 digits minor
+#define MI_MALLOC_VERSION 171   // major + 2 digits minor
 
 // ------------------------------------------------------
 // Compiler specific attributes
@@ -267,7 +267,6 @@ mi_decl_export int mi_reserve_huge_os_pages_at(size_t pages, int numa_node, size
 mi_decl_export int  mi_reserve_os_memory(size_t size, bool commit, bool allow_large) mi_attr_noexcept;
 mi_decl_export bool mi_manage_os_memory(void* start, size_t size, bool is_committed, bool is_large, bool is_zero, int numa_node) mi_attr_noexcept;
 
-mi_decl_export void mi_debug_show_arenas(void) mi_attr_noexcept;
 
 // deprecated
 mi_decl_export int  mi_reserve_huge_os_pages(size_t pages, double max_secs, size_t* pages_reserved) mi_attr_noexcept;
@@ -313,9 +312,7 @@ typedef enum mi_option_e {
   mi_option_abandoned_page_reset,
   mi_option_segment_reset,
   mi_option_eager_commit_delay,
-  mi_option_allow_decommit,
   mi_option_reset_delay,
-  mi_option_segment_decommit_delay,
   mi_option_use_numa_nodes,
   mi_option_limit_os_alloc,
   mi_option_os_tag,

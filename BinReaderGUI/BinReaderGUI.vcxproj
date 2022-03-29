@@ -89,8 +89,10 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;TRACY_ENABLE;TRACY_CALLSTACK;TRACY_ON_DEMAND;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>libs;libs\tracy;libs\mimalloc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <LanguageStandard>stdcpp17</LanguageStandard>
-      <OpenMPSupport>false</OpenMPSupport>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <OpenMPSupport>true</OpenMPSupport>
+      <AssemblerOutput>All</AssemblerOutput>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -109,8 +111,9 @@
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <AdditionalIncludeDirectories>libs;libs\mimalloc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <LanguageStandard>stdcpp17</LanguageStandard>
-      <OpenMPSupport>false</OpenMPSupport>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <OpenMPSupport>true</OpenMPSupport>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -127,9 +130,12 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;TRACY_ENABLE;TRACY_CALLSTACK;TRACY_ON_DEMAND;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>libs;libs\tracy;libs\mimalloc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
-      <OpenMPSupport>false</OpenMPSupport>
+      <OpenMPSupport>true</OpenMPSupport>
+      <AssemblerOutput>All</AssemblerOutput>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <UndefinePreprocessorDefinitions>TRACY_ENABLE</UndefinePreprocessorDefinitions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -149,8 +155,9 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <OmitFramePointers>false</OmitFramePointers>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <LanguageStandard>stdcpp17</LanguageStandard>
-      <OpenMPSupport>false</OpenMPSupport>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <OpenMPSupport>true</OpenMPSupport>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -161,7 +168,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="BinReader.cpp" />
     <ClCompile Include="glad.c" />
+    <ClCompile Include="Hashtable.cpp" />
     <ClCompile Include="libs\imgui\imgui.cpp" />
     <ClCompile Include="libs\imgui\imgui_demo.cpp" />
     <ClCompile Include="libs\imgui\imgui_draw.cpp" />
@@ -169,11 +178,19 @@
     <ClCompile Include="libs\imgui\imgui_impl_opengl3.cpp" />
     <ClCompile Include="libs\imgui\imgui_widgets.cpp" />
     <ClCompile Include="libs\imgui\imgui_tables.cpp" />
+    <ClCompile Include="MemoryWrapper.cpp" />
+    <ClCompile Include="Myassert.cpp" />
+    <ClCompile Include="TernaryTree.cpp" />
     <ClCompile Include="TracyClient.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="BinReader.h" />
     <ClInclude Include="BinReaderLib.h" />
+    <ClInclude Include="Hashtable.h" />
+    <ClInclude Include="MemoryWrapper.h" />
+    <ClInclude Include="Myassert.h" />
+    <ClInclude Include="TernaryTree.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
