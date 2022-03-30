@@ -104,6 +104,7 @@ int main()
 	char savePath[MAX_PATH] = { '\0' };
 	char openFile[MAX_PATH] = { '\0' };
 	char saveFile[MAX_PATH] = { '\0' };
+	char openFile_temp[MAX_PATH] = { '\0' };
 
 	char currentPath[MAX_PATH] = { '\0' };
 	GetCurrentDirectoryA(MAX_PATH, currentPath);
@@ -318,8 +319,8 @@ int main()
 				{				
 					OPENFILENAMEA ofn;
 					myassert(memset(&ofn, 0, sizeof(ofn)) != &ofn)
-					myassert(memset(openFile, 0, MAX_PATH) != openFile)
 					myassert(memset(openPath, 0, MAX_PATH) != openPath)
+					myassert(memset(openFile_temp, 0, MAX_PATH) != openFile_temp)
 
 					pathSize = MAX_PATH;
 					regStatus = RegGetValueA(HKEY_CURRENT_USER, "SOFTWARE\\BinReaderGUI", "openpath",
@@ -333,7 +334,7 @@ int main()
 
 					ofn.lStructSize = sizeof(ofn);
 					ofn.hwndOwner = glfwWindowNative;
-					ofn.lpstrFile = openFile;
+					ofn.lpstrFile = openFile_temp;
 					ofn.nMaxFile = MAX_PATH;
 					ofn.lpstrFilter = "*.bin";
 					ofn.nFilterIndex = 1;
@@ -347,13 +348,14 @@ int main()
 					{
 						if (openFile[0] != '\0')
 						{
-							size_t openFileLen = strlen(openFile);
-							myassert(memset(openPath, 0, MAX_PATH) != openPath)
-							myassert(memcpy(openPath, openFile, openFileLen) != openPath)
+							myassert(memcpy(openFile, openFile_temp, MAX_PATH) != openFile)
+							myassert(memcpy(openPath, openFile, MAX_PATH) != openPath)
+
+							size_t openPathLen = strlen(openFile);
 							strip_filepath(openPath);
 
 							regStatus = RegSetValueExA(regkeyresult, "openpath", 0, REG_EXPAND_SZ,
-								(LPCBYTE)openPath, (DWORD)openFileLen);
+								(LPCBYTE)openPath, (DWORD)openPathLen);
 							if (regStatus != ERROR_SUCCESS)
 							{
 								sprintf_s(msgTitle, 512, "Setting key value failed: %d %d", regStatus, GetLastError());
@@ -424,13 +426,13 @@ int main()
 						{
 							if (openFile[0] != '\0')
 							{
-								size_t saveFileLen = strlen(saveFile);
-								myassert(memset(savePath, 0, MAX_PATH) != savePath)
-								myassert(memcpy(savePath, saveFile, saveFileLen) != savePath)
+								myassert(memcpy(savePath, saveFile, MAX_PATH) != savePath)
+
 								strip_filepath(savePath);
+								size_t savePathLen = strlen(saveFile);
 
 								regStatus = RegSetValueExA(regkeyresult, "savepath", 0, REG_EXPAND_SZ,
-									(LPCBYTE)savePath, (DWORD)saveFileLen);
+									(LPCBYTE)savePath, (DWORD)savePathLen);
 								if (regStatus != ERROR_SUCCESS)
 								{
 									sprintf_s(msgTitle, 512, "Setting key value failed: %d %d", regStatus, GetLastError());
