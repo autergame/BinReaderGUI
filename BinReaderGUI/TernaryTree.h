@@ -11,7 +11,8 @@
 struct TernaryNode
 {
 	char key = '\0';
-	mi_string endText = "";
+	const char* endText = nullptr;
+
 	TernaryNode *leftChild = nullptr;
 	TernaryNode *equalChild = nullptr;
 	TernaryNode *rightChild = nullptr;
@@ -29,11 +30,9 @@ public:
 		CleanTernaryNode(m_nodeRoot);
 	}
 
-	int Insert(mi_string word);
+	int Insert(const char* word);
 	const TernaryNode *Search(const char* query);
-	int SujestionsSize(const char* query, const char** biggesttext);
-	int Sujestions(const char* query, const char** output,
-		const int startat, const int maxsize);
+	void Sujestions(const char* query, const char** biggesttext, mi_vector<const char*>* list);
 	void LoadFromHashTable(const HashTable& hasht);
 };
 

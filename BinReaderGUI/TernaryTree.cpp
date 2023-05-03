@@ -11,7 +11,7 @@ void CleanTernaryNode(TernaryNode *node)
 	}
 }
 
-int TernaryTree::Insert(mi_string word)
+int TernaryTree::Insert(const char* word)
 {
 	TernaryNode **nodeRootModifier = &m_nodeRoot;
 	TernaryNode *nodeInterator;
@@ -66,14 +66,14 @@ const TernaryNode *TernaryTree::Search(const char* query)
 	return nullptr;
 }
 
-int TernaryTree::SujestionsSize(const char* query, const char** biggesttext)
+void TernaryTree::Sujestions(const char* query, const char** biggesttext, mi_vector<const char*>* list)
 {
-	const TernaryNode* lastNode = TernaryTree::Search(query);
+	const TernaryNode *lastNode = TernaryTree::Search(query);
 	if (lastNode)
 	{
 		if (lastNode->leftChild || lastNode->rightChild || lastNode->equalChild)
 		{
-			int index = 0;
+			bool removequery = true;
 			size_t textsizefinal = 0;
 
 			mi_deque<const TernaryNode*> stack;
@@ -81,68 +81,36 @@ int TernaryTree::SujestionsSize(const char* query, const char** biggesttext)
 
 			while (stack.size() > 0)
 			{
-				const TernaryNode* nodeStack = stack.back(); stack.pop_back();
-
-				size_t textsize = nodeStack->endText.size();
-				if (textsize > 0)
-				{
-					index++;
-					if (textsize > textsizefinal)
-					{
-						textsizefinal = textsize;
-						*biggesttext = nodeStack->endText.c_str();
-					}
-				}
-
-				if (nodeStack->rightChild)
-					stack.emplace_back(nodeStack->rightChild);
-				if (nodeStack->equalChild)
-					stack.emplace_back(nodeStack->equalChild);
-				if (nodeStack->leftChild)
-					stack.emplace_back(nodeStack->leftChild);
-			}
-
-			return index - 1;
-		}
-	}
-	return 0;
-}
-
-int TernaryTree::Sujestions(const char* query, const char** output,
-	const int startat, const int maxsize)
-{
-	const TernaryNode *lastNode = TernaryTree::Search(query);
-	if (lastNode)
-	{
-		if (lastNode->leftChild || lastNode->rightChild || lastNode->equalChild)
-		{
-			int index = 0;
-			int minindex = 0;
-			bool removequery = true;
-
-			mi_deque<const TernaryNode*> stack;
-			stack.emplace_back(lastNode);
-
-			while (stack.size() > 0 && index < maxsize)
-			{
 				const TernaryNode *nodeStack = stack.back(); stack.pop_back();
 
-				if (nodeStack->endText.size() > 0)
+				if (nodeStack->endText)
 				{
-					if (removequery)
+					if (strlen(nodeStack->endText) > 0)
 					{
-						if (query == nodeStack->endText)
+						if (removequery)
 						{
-							removequery = false;
-							goto jump;
+							if (strcmp(query, nodeStack->endText) == 0)
+							{
+								removequery = false;
+								goto jump;
+							}
 						}
+
+						size_t textsize = strlen(nodeStack->endText);
+						if (textsize > 0)
+						{
+							if (textsize > textsizefinal)
+							{
+								textsizefinal = textsize;
+								*biggesttext = nodeStack->endText;
+							}
+						}
+
+						list->push_back(nodeStack->endText);
 					}
-					if (minindex++ >= startat)
-						output[index++] = nodeStack->endText.c_str();
 				}
 
-				jump:
-
+			jump:
 				if (nodeStack->rightChild)
 					stack.emplace_back(nodeStack->rightChild);
 				if (nodeStack->equalChild)
@@ -150,18 +118,15 @@ int TernaryTree::Sujestions(const char* query, const char** output,
 				if (nodeStack->leftChild)
 					stack.emplace_back(nodeStack->leftChild);
 			}
-
-			return index;
 		}
 	}
-	return 0;
 }
 
 void TernaryTree::LoadFromHashTable(const HashTable& hasht)
 {
 	size_t total = 0;
-	for (auto it = hasht.table.begin(); it != hasht.table.end(); it++) {
-		total += TernaryTree::Insert(it->second);
+	for (auto &it : hasht.table) {
+		total += TernaryTree::Insert(it.second.c_str());
 	}
 	printf("Ternary loaded total of hashes: %zd\n", total);
 }

@@ -415,7 +415,7 @@ int PacketBin::DecodeBin(char* filePath, HashTable& hashT, TernaryTree& ternaryT
 			{
 				size_t stringLength = (size_t)input.MemRead<uint16_t>();
 
-				mi_string linkedStr(stringLength + 1, '\0');
+				mi_string linkedStr(stringLength, '\0');
 				input.MemRead(linkedStr.data(), stringLength);
 
 				m_linkedList.emplace_back(0, linkedStr);
@@ -548,8 +548,6 @@ int PacketBin::EncodeBin(char* filePath)
 
 	if (m_isPatch)
 	{
-		if (m_Unknown = 0)
-			m_Unknown = 1;
 		output.MemWrite((void*)"PTCH", 4);
 		output.MemWrite(m_Unknown);
 	}

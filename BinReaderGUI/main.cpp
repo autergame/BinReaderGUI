@@ -133,7 +133,7 @@ int main()
 	DWORD pathSize = MAX_PATH;
 	regStatus = RegGetValueA(HKEY_CURRENT_USER, "SOFTWARE\\BinReaderGUI", "openpath",
 		RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND, nullptr, openPath, &pathSize);
-	if (regStatus == ERROR_FILE_NOT_FOUND || regStatus == ERROR_FILE_NOT_FOUND)
+	if (regStatus == ERROR_FILE_NOT_FOUND)
 	{
 		regStatus = RegSetValueExA(regkeyresult, "openpath", 0, REG_EXPAND_SZ, (LPCBYTE)currentPath, MAX_PATH);
 		if (regStatus != ERROR_SUCCESS)
@@ -153,7 +153,7 @@ int main()
 	pathSize = MAX_PATH;
 	regStatus = RegGetValueA(HKEY_CURRENT_USER, "SOFTWARE\\BinReaderGUI", "savepath",
 		RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND, nullptr, savePath, &pathSize);
-	if (regStatus == ERROR_FILE_NOT_FOUND || regStatus == ERROR_FILE_NOT_FOUND)
+	if (regStatus == ERROR_FILE_NOT_FOUND)
 	{
 		regStatus = RegSetValueExA(regkeyresult, "savepath", 0, REG_EXPAND_SZ, (LPCBYTE)currentPath, MAX_PATH);
 		if (regStatus != ERROR_SUCCESS)
@@ -174,7 +174,7 @@ int main()
 	DWORD vSync = 0;
 	regStatus = RegGetValueA(HKEY_CURRENT_USER, "SOFTWARE\\BinReaderGUI", "vsync",
 		RRF_RT_REG_DWORD, nullptr, &vSync, &pathSize);
-	if (regStatus == ERROR_FILE_NOT_FOUND || regStatus == ERROR_FILE_NOT_FOUND)
+	if (regStatus == ERROR_FILE_NOT_FOUND)
 	{
 		vSync = 0;
 		regStatus = RegSetValueExA(regkeyresult, "vsync", 0, REG_DWORD, (LPCBYTE)&vSync, 4);
@@ -260,7 +260,7 @@ int main()
 
 #define TESTBIN
 #if defined TESTBIN && defined _DEBUG
-	const char* teststr = "C:\\Users\\autergame\\Documents\\Visual Studio 2019\\Projects\\BinReader\\BinReader\\DebugWR\\test.bin";
+	const char* teststr = "C:\\Users\\ferna\\Downloads\\BinReaderGUI\\BinReaderGUI\\DebugWR\\test.bin";
 	if (packet.DecodeBin((char*)teststr, hashT, ternaryT))
 	{
 		treeId = 2;
@@ -346,7 +346,7 @@ int main()
 
 					if (GetOpenFileNameA(&ofn) == TRUE)
 					{
-						if (openFile[0] != '\0')
+						if (openFile_temp[0] != '\0')
 						{
 							myassert(memcpy(openFile, openFile_temp, MAX_PATH) != openFile)
 							myassert(memcpy(openPath, openFile, MAX_PATH) != openPath)
@@ -424,7 +424,7 @@ int main()
 
 						if (GetSaveFileNameA(&ofn) == TRUE)
 						{
-							if (openFile[0] != '\0')
+							if (saveFile[0] != '\0')
 							{
 								myassert(memcpy(savePath, saveFile, MAX_PATH) != savePath)
 
@@ -444,7 +444,7 @@ int main()
 							}
 						}
 					}
-					ImGui::SameLine();
+					ImGui::SameLine(0.0f, GImGui->Style.ItemSpacing.x * 2.f);
 					if (ImGui::Checkbox("Open/Close All Tree Nodes", &openChoose))
 					{
 						if (openChoose)
@@ -452,21 +452,21 @@ int main()
 						else
 							SetTreeCloseState(packet.m_entriesBin, imguiWindow);
 					}
-					ImGui::SameLine();
+					ImGui::SameLine(0.0f, GImGui->Style.ItemSpacing.x * 2.f);
 					ImGui::Checkbox("RainBow Mode", &rainbow);
-					ImGui::SameLine();
-					if (ImGui::Checkbox("Enable Vsync", (bool*)&vSync))
+				}
+				ImGui::SameLine(0.0f, GImGui->Style.ItemSpacing.x * 2.f);
+				if (ImGui::Checkbox("Enable Vsync", (bool*)&vSync))
+				{
+					regStatus = RegSetValueExA(regkeyresult, "vsync", 0, REG_DWORD, (LPCBYTE)&vSync, 4);
+					if (regStatus != ERROR_SUCCESS)
 					{
-						regStatus = RegSetValueExA(regkeyresult, "vsync", 0, REG_DWORD, (LPCBYTE)&vSync, 4);
-						if (regStatus != ERROR_SUCCESS)
-						{
-							sprintf_s(msgTitle, 512, "Setting key value failed: %d %d", regStatus, GetLastError());
-							MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
-							exit(1);
-						}
-
-						glfwSwapInterval(vSync);
+						sprintf_s(msgTitle, 512, "Setting key value failed: %d %d", regStatus, GetLastError());
+						MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+						exit(1);
 					}
+
+					glfwSwapInterval(vSync);
 				}
 				ImGui::EndMenuBar();
 			}

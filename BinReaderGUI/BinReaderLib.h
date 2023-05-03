@@ -7,6 +7,33 @@ static char* falsestr = _strdup("false");
 
 #pragma region BinTextsHandlers
 
+struct ternarypopup
+{
+	bool open = false;
+
+	struct ternarypopupvars
+	{
+		uint32_t userdatahashold = 0;
+		mi_vector<const char*> sujestions;
+		const char* biggesttext = nullptr;
+
+		int count = 0;
+		int startatold = -1;
+		const char** output = nullptr;
+	};
+
+	ternarypopupvars* vars = nullptr;
+
+	~ternarypopup() {
+		if (vars != nullptr)
+		{
+			if (vars->output != nullptr)
+				delete vars->output;
+			delete vars;
+		}
+	}
+};
+
 char* InputTextWithSusjestion(const int id, char* inner, TernaryTree& ternaryT)
 {
 #ifdef TRACY_ENABLE_ZONES
@@ -67,57 +94,32 @@ char* InputTextWithSusjestion(const int id, char* inner, TernaryTree& ternaryT)
 		ImGui::SetTooltip("%d", id);
 #endif
 
-	struct ternarypopup
-	{
-		bool open = false;
-
-		struct ternarypopupvars
-		{	
-			int sujestionsize = 0;
-			uint32_t userdatahashold = 0;
-			const char* biggesttext = nullptr;
-
-			int count = 0;
-			int startatold = -1;
-			const char** output = nullptr;
-		};
-
-		ternarypopupvars* vars = nullptr; 
-
-		~ternarypopup() {
-			if (vars != nullptr)
-			{
-				if (vars->output != nullptr)
-					delete vars->output;
-				delete vars;
-			}
-		}
-	};
-
 	char* userdatacopied = nullptr;
 	static mi_unordered_map<int, ternarypopup> popupmap;
+	ternarypopup& popupmapid = popupmap[id];
 
 	if (userdata[0] != '\0')
 	{
-		popupmap[id].open |= ImGui::IsItemActive();
-		if (popupmap[id].open)
+		popupmapid.open |= ImGui::IsItemActive();
+		if (popupmapid.open)
 		{
-			for (auto it = popupmap.begin(); it != popupmap.end(); it++)
-				it->second.open = false;
-			popupmap[id].open = true;
+			for (auto &it : popupmap)
+				it.second.open = false;
+			popupmapid.open = true;
 
-			if (popupmap[id].vars == nullptr)
-				popupmap[id].vars = new ternarypopup::ternarypopupvars;
+			if (popupmapid.vars == nullptr)
+				popupmapid.vars = new ternarypopup::ternarypopupvars;
 
 			uint32_t userdatahash = FNV1Hash(userdata, strlen(userdata));
-			bool userdatachanged = popupmap[id].vars->userdatahashold != userdatahash;
+			bool userdatachanged = popupmapid.vars->userdatahashold != userdatahash;
 			if (userdatachanged)
 			{
-				popupmap[id].vars->sujestionsize = ternaryT.SujestionsSize(userdata, &popupmap[id].vars->biggesttext);
-				popupmap[id].vars->userdatahashold = userdatahash;
+				popupmapid.vars->sujestions.clear();
+				popupmapid.vars->userdatahashold = userdatahash;
+				ternaryT.Sujestions(userdata, &popupmapid.vars->biggesttext, &popupmapid.vars->sujestions);
 			}
 
-			if (popupmap[id].vars->sujestionsize > 0)
+			if (popupmapid.vars->sujestions.size() > 0)
 			{
 				int startat = 0;
 
@@ -127,25 +129,24 @@ char* InputTextWithSusjestion(const int id, char* inner, TernaryTree& ternaryT)
 					if (scrolly > 0.f)
 					{
 						float scroll_ratio = scrolly / comboxwindow->ScrollMax.y;
-						startat = (int)floorf((scroll_ratio * popupmap[id].vars->sujestionsize) - (scroll_ratio * 10.f));
+						startat = (int)floorf((scroll_ratio * popupmapid.vars->sujestions.size()) - (scroll_ratio * 10.f));
 					}
 				}
 
-				if (popupmap[id].vars->startatold != startat || userdatachanged)
-				{
-					if (popupmap[id].vars->output == nullptr)
-						popupmap[id].vars->output = new const char*[12]{};
 
-					popupmap[id].vars->count = ternaryT.Sujestions(userdata, popupmap[id].vars->output, startat, 12);
-					popupmap[id].vars->startatold = startat;
+				if (popupmapid.vars->startatold != startat || userdatachanged)
+				{
+					popupmapid.vars->startatold = startat;
+					popupmapid.vars->output = popupmapid.vars->sujestions.data() + startat;
+					popupmapid.vars->count = ImMin((int)popupmapid.vars->sujestions.size() - startat, 12);
 				}
 
-				if (popupmap[id].vars->count > 0)
+				if (popupmapid.vars->count > 0)
 				{
 					ImRect inputsize = GImGui->LastItemData.Rect;
 					ImVec2 popuppos = ImVec2(inputsize.Min.x, 0.f);
 
-					float maxvisible = ImMin(popupmap[id].vars->count, 10) + 1.25f;
+					float maxvisible = ImMin(popupmapid.vars->count, 10) + 1.25f;
 					float popupsizey = (GImGui->FontSize + GImGui->Style.FramePadding.y) * maxvisible;
 
 					if (inputsize.Max.y < mainwindow->InnerClipRect.Max.y - popupsizey)
@@ -153,7 +154,7 @@ char* InputTextWithSusjestion(const int id, char* inner, TernaryTree& ternaryT)
 					else
 						popuppos.y = inputsize.Min.y - popupsizey;
 
-					float textmaxsize = popuppos.x + (ImGui::CalcTextSize(popupmap[id].vars->biggesttext).x + GImGui->FontSize * 3.f);
+					float textmaxsize = popuppos.x + (ImGui::CalcTextSize(popupmapid.vars->biggesttext).x + GImGui->FontSize * 3.f);
 					float maxtextclip = mainwindow->InnerClipRect.Max.x - GImGui->FontSize;
 					float textsize = 0.f;
 					if (textmaxsize < maxtextclip)
@@ -168,7 +169,7 @@ char* InputTextWithSusjestion(const int id, char* inner, TernaryTree& ternaryT)
 
 					ImGui::PushAllowKeyboardFocus(false);
 
-					if (ImGui::Begin(comboxwindowname, &popupmap[id].open,
+					if (ImGui::Begin(comboxwindowname, &popupmapid.open,
 						ImGuiWindowFlags_HorizontalScrollbar |
 						ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
 						ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoNavFocus |
@@ -186,25 +187,25 @@ char* InputTextWithSusjestion(const int id, char* inner, TernaryTree& ternaryT)
 							ImGui::ItemSize(total_bb, GImGui->Style.FramePadding.y);
 						}
 
-						for (int i = 0; i < popupmap[id].vars->count; i++)
+						for (int i = 0; i < popupmapid.vars->count; i++)
 						{
 							ImGui::PushID(i);
-							if (ImGui::Selectable(popupmap[id].vars->output[i], false,
+							if (ImGui::Selectable(popupmapid.vars->output[i], false,
 								ImGuiSelectableFlags_SelectOnClick | ImGuiSelectableFlags_NoHoldingActiveID))
 							{
-								size_t size = strlen(popupmap[id].vars->output[i]) + 1;
+								size_t size = strlen(popupmapid.vars->output[i]) + 1;
 								userdatacopied = new char[size];
-								myassert(memcpy(userdatacopied, popupmap[id].vars->output[i], size) != userdatacopied)
+								myassert(memcpy(userdatacopied, popupmapid.vars->output[i], size) != userdatacopied)
 
 								ret = false;
 								deactivated = false;
-								i = popupmap[id].vars->count;
-								popupmap[id].open = false;
+								popupmapid.open = false;
+								i = popupmapid.vars->count;
 							}
 							ImGui::PopID();
 						}
 
-						for (int i = startat + 10; i < popupmap[id].vars->sujestionsize; i++)
+						for (int i = startat + 10; i < popupmapid.vars->sujestions.size(); i++)
 						{
 							ImRect total_bb(GImGui->CurrentWindow->DC.CursorPos,
 								ImVec2(GImGui->CurrentWindow->DC.CursorPos.x,
@@ -218,8 +219,8 @@ char* InputTextWithSusjestion(const int id, char* inner, TernaryTree& ternaryT)
 
 					ImGui::PopAllowKeyboardFocus();
 
-					popupmap[id].open &= !(GImGui->HoveredWindow == mainwindow && ImGui::IsMouseDown(ImGuiMouseButton_Left));
-					if (popupmap[id].open)
+					popupmapid.open &= !(GImGui->HoveredWindow == mainwindow && ImGui::IsMouseDown(ImGuiMouseButton_Left));
+					if (popupmapid.open)
 					{
 						if (idscroll != 0)
 						{
@@ -245,7 +246,7 @@ char* InputTextWithSusjestion(const int id, char* inner, TernaryTree& ternaryT)
 		ImGuiInputTextState* state = &GImGui->InputTextState;
 		if (state->ID == inputid)
 		{
-			popupmap[id].open = false;
+			popupmapid.open = false;
 			userdatacopied = new char[state->CurLenA + 1];
 			myassert(memcpy(userdatacopied, state->TextA.Data, state->CurLenA + 1) != userdatacopied)
 		}
@@ -255,7 +256,7 @@ char* InputTextWithSusjestion(const int id, char* inner, TernaryTree& ternaryT)
 		if (ImGui::IsKeyPressed(ImGuiKey_Enter) ||
 		   (!inputhover && (GImGui->HoveredWindow == mainwindow && ImGui::IsMouseDown(ImGuiMouseButton_Left))))
 		{
-			popupmap[id].open = false;
+			popupmapid.open = false;
 			size_t size = strlen(userdata) + 1;
 			userdatacopied = new char[size];
 			myassert(memcpy(userdatacopied, userdata, size) != userdatacopied)
@@ -406,9 +407,9 @@ void FloatArray(float* floatArr, size_t size, int id)
 	}
 	float indent = ImGui::GetCurrentWindow()->DC.CursorPos.x;
 	float stringd = ImGui::CalcTextSize(buf[arrindex].c_str()).x;
-	for (int i = 0; i < size; i++)
+	for (size_t i = 0; i < size; i++)
 	{
-		char* string = InputText(buf[i].data(), id + i, stringd);
+		char* string = InputText(buf[i].data(), id + (int)i, stringd);
 		if (string)
 		{
 			myassert(sscanf_s(string, "%g", &floatArr[i]) <= 0)
